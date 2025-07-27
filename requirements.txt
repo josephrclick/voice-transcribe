@@ -1,0 +1,12 @@
+deepgram-sdk>=4.0.0
+sounddevice==0.5.1
+numpy>=1.26.0
+python-dotenv==1.0.1
+pyperclip==1.9.0
+pynput==1.7.7
+PyGObject>=3.48.0
+
+# For v2 (VAD support)
+# torch>=2.0.0
+# torchaudio>=2.0.0
+# silero-vad>=5.1.0
