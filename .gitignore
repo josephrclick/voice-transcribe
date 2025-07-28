@@ -2,6 +2,11 @@
 .env
 .env.local
 
+# Dev
+CLAUDE.md
+.claude/
+test*.*
+
 # Python
 __pycache__/
 *.py[cod]
@@ -31,8 +36,6 @@ wheels/
 *.wav
 *.mp3
 *.m4a
-test_recording.wav
-debug_recording.wav
 
 # IDE
 .vscode/

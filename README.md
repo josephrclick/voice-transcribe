@@ -1,6 +1,8 @@
 # Voice Transcribe
 
-A simple Linux desktop tool for voice-to-text transcription using Deepgram's API. Speak naturally, and your words appear ready to paste into any application.
+A simple Linux desktop tool for voice-to-text transcription using Deepgram's API. Built quickly as a hobby project with a goal of increasing productivity. 
+
+Speak naturally, and your words appear ready to paste into any application.
 
 ## Features
 
@@ -22,7 +24,7 @@ A simple Linux desktop tool for voice-to-text transcription using Deepgram's API
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/voice-transcribe.git
+   git clone https://github.com/josephrclick/voice-transcribe.git
    cd voice-transcribe
    ```
 
@@ -53,7 +55,7 @@ A simple Linux desktop tool for voice-to-text transcription using Deepgram's API
    echo "DEEPGRAM_API_KEY=your_api_key_here" > .env
    ```
    
-   Get your free API key at: https://console.deepgram.com/signup
+   Shout out to Deepgram for being solid as hell.
 
 ## Usage
 
@@ -107,11 +109,6 @@ pactl set-default-source <device_name>
 - **X11** (Recommended): Auto-paste works automatically
 - **Wayland**: Manual paste required (Ctrl+V)
 
-To switch to X11:
-1. Log out
-2. Click gear icon on login screen
-3. Select "Ubuntu on Xorg"
-
 ## Project Structure
 
 ```
@@ -161,16 +158,7 @@ voice-transcribe/
 - **pynput** - Keyboard automation
 - **python-dotenv** - Environment variables
 
-## License
+##Acknowledgments
 
-MIT License - feel free to modify and share!
-
-## Acknowledgments
-
-- [Deepgram](https://deepgram.com) for the excellent speech recognition API
-- The PyGObject team for GTK Python bindings
-- Built with ☕ and 🎵 by [Your Name]
-
----
-
-**Note**: This is a personal productivity tool. For production use, consider adding error handling, user preferences, and security measures.
+- ☕ 
+- 🎵 
