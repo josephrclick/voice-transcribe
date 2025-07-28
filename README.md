@@ -1,164 +1,146 @@
-# Voice Transcribe
+# Voice Transcribe v3 🎤
 
-A simple Linux desktop tool for voice-to-text transcription using Deepgram's API. Built quickly as a hobby project with a goal of increasing productivity. 
+A delightfully simple voice-to-text tool for Linux that just works™. Click button, speak thoughts, get text. It's like magic, but with more Python.
 
-Speak naturally, and your words appear ready to paste into any application.
+## What It Does (And Doesn't Do)
 
-## Features
+**What it does:**
+- 🔴 One big button that says "Start Recording" (revolutionary, I know)
+- ⏱️ Shows you how long you've been rambling
+- 📊 Counts your words so you know if you're being verbose
+- 📋 Auto-copies to clipboard because Ctrl+C is so 2023
+- 🎨 Dark theme that won't burn your retinas at 3am
+- ⌨️ Ctrl+Q toggle support (for the keyboard warriors)
+- 🚀 Actually works, which is more than I can say for my first 17 projects
 
-- 🎤 **Click-to-record** - Simple UI with a single button
-- 🚀 **Fast transcription** - Powered by Deepgram's Nova-3 model
-- 📋 **Automatic clipboard** - Transcribed text is copied automatically
-- 🔝 **Always-on-top window** - Easy access while working
-- 🐧 **Linux native** - Built with GTK for Linux desktops
+**What it doesn't do:**
+- 🤖 No AI listening to you 24/7 (that's for v4 when I wire up the house)
+- 🎯 No Voice Activity Detection (turns out, buttons are fine)
+- 🔮 No mind reading (yet)
 
-## Requirements
+## The Stack
 
-- Ubuntu 22.04+ (or similar Linux distribution)
-- Python 3.10+
-- Deepgram API key (free tier available)
-- PulseAudio or PipeWire audio system
-- X11 display server (recommended) or Wayland
+- **GTK 3** - Because native Linux apps deserve love
+- **Deepgram Nova-3** - The speech recognition that actually understands mumbling
+- **Python** - The language of "let's just ship it"
 
 ## Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/josephrclick/voice-transcribe.git
-   cd voice-transcribe
-   ```
+```bash
+# Clone this bad boy
+git clone https://github.com/josephrclick/voice-transcribe.git
+cd voice-transcribe
 
-2. **Create a virtual environment**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+# Virtual environment (because we're not savages)
+python3 -m venv venv
+source venv/bin/activate
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Install the goods
+pip install -r requirements.txt
 
-4. **Install system dependencies**
-   ```bash
-   # For clipboard support
-   sudo apt install wl-clipboard  # Wayland
-   sudo apt install xclip         # X11
-   
-   # For auto-paste on X11
-   sudo apt install xdotool
-   ```
+# System deps for clipboard greatness
+sudo apt install xclip xdotool  # X11 users
+sudo apt install wl-clipboard    # Wayland folks
 
-5. **Set up your Deepgram API key**
-   ```bash
-   # Create .env file
-   echo "DEEPGRAM_API_KEY=your_api_key_here" > .env
-   ```
-   
-   Shout out to Deepgram for being solid as hell.
+# Add your Deepgram key (get one free at deepgram.com)
+echo "DEEPGRAM_API_KEY=your_key_here" > .env
+```
 
 ## Usage
 
-### Basic Usage
+### The Simple Way
+```bash
+python main.py
+```
 
-1. **Start the application**
-   ```bash
-   source venv/bin/activate
-   python main.py
-   ```
+Click the big button. Talk. Click again. Paste anywhere. You're welcome.
 
-2. **Click "Start Recording"** and speak
-
-3. **Click "Stop Recording"** when done
-
-4. **Paste your transcribed text** with Ctrl+V
-
-### Desktop Launcher (Optional)
-
-Create a desktop shortcut for easy access:
+### The Pro Way
+Set up the desktop launcher and Ctrl+Q hotkey:
 
 ```bash
+# Create desktop shortcut
 cat > ~/.local/share/applications/voice-transcribe.desktop << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Voice Transcribe
-Comment=Transcribe speech to text
+Name=Voice Transcribe v3
+Comment=Speech to text, but cooler
 Exec=bash -c "cd $HOME/voice-transcribe && source venv/bin/activate && python main.py"
 Icon=audio-input-microphone
 Terminal=false
 Categories=Utility;Audio;
+StartupNotify=true
 EOF
+
+# Set up Ctrl+Q global hotkey (GNOME example)
+# Go to Settings > Keyboard > Custom Shortcuts
+# Command: bash -c "cd $HOME/voice-transcribe && source venv/bin/activate && python main.py toggle"
 ```
 
-## Configuration
+## Why v3?
 
-### Audio Settings
+- v1: "Hey, this could work!" (Narrator: it didn't)
+- v2: "Let's add ALL the features!" (Spoiler: too many features)
+- v3: "What if we just... made it work?" (Revolutionary concept)
 
-The app uses your default microphone at 16kHz sample rate. To change your default mic:
-```bash
-# List audio devices
-pactl list short sources
+## Features That Actually Exist
 
-# Set default
-pactl set-default-source <device_name>
-```
+### 🎨 Dark Theme
+Because your eyes matter. Carefully crafted with Catppuccin-inspired colors that say "I code at night and I'm proud of it."
 
-### Display Server
+### 📊 Real-time Stats
+Watch the seconds tick by and words accumulate. It's like a fitness tracker, but for your mouth.
 
-- **X11** (Recommended): Auto-paste works automatically
-- **Wayland**: Manual paste required (Ctrl+V)
+### 🔄 Action Buttons
+- **Copy**: In case the auto-copy wasn't enough
+- **Clear**: For when you realize what you just said
 
-## Project Structure
+### 🎯 Auto-paste (X11)
+On X11, it'll even paste for you. On Wayland? Well, Ctrl+V isn't that hard.
 
-```
-voice-transcribe/
-├── main.py              # Main application
-├── requirements.txt     # Python dependencies
-├── .env                # API keys (not in git)
-├── .gitignore          # Git ignore file
-└── README.md           # This file
-```
+### 🔝 Always On Top
+Stays visible because out of sight, out of mind, and we can't have that.
 
 ## Troubleshooting
 
-### No audio recording
-- Check your microphone permissions
-- Verify default audio input: `pactl info | grep "Default Source"`
+**"It's not recording!"**
+- Is your mic plugged in? (I'm not judging)
+- `pactl list short sources` - pick a working one
+- `pactl set-default-source <that_working_one>`
 
-### Transcription fails
-- Verify your Deepgram API key is correct
-- Check internet connection
-- Ensure you have API credits remaining
+**"Where's my transcript?"**
+- Did you actually say something?
+- Check your Deepgram API key
+- Is the internet on?
 
-### Auto-paste not working
-- On Wayland: This is expected - use Ctrl+V manually
-- On X11: Ensure xdotool is installed
-- Try clicking in your target window immediately after recording
+**"Auto-paste isn't working!"**
+- Using Wayland? That's a feature, not a bug. Use Ctrl+V.
+- On X11? Make sure xdotool is installed and you clicked where you want to paste
 
-### GTK warnings
-- Usually harmless and can be ignored
-- To suppress: `export GTK_THEME=Adwaita`
+**"I see GTK warnings!"**
+- They're like participation trophies - everyone gets them, nobody wants them
+- `export GTK_THEME=Adwaita` if they really bug you
 
-## Coming in v2
+## What's NOT Coming Soon
 
-- 🎯 Voice Activity Detection (VAD) - Automatic recording when you speak
-- ⌨️ Global hotkey support (Ctrl+Q to toggle)
-- 🔄 Continuous transcription mode
-- 🤖 OpenAI integration for transcript enhancement
-- 📝 Transcription history
+- 🎯 VAD (Voice Activity Detection) - Buttons are fine, actually
+- 🤖 AI house assistant integration - That's a different repo
+- 🧠 Mind reading API - Still in alpha at Neuralink
 
-## Dependencies
+## What Might Come Eventually
 
-- **deepgram-sdk** - Speech-to-text API
-- **PyGObject** - GTK bindings for Python
-- **sounddevice** - Audio recording
-- **numpy** - Audio processing
-- **pyperclip** - Clipboard management
-- **pynput** - Keyboard automation
-- **python-dotenv** - Environment variables
+- 📝 History of your ramblings
+- 🌍 More language support
+- 🎨 Theme customization (for the 3 people who don't like dark mode)
+- ☁️ Cloud sync (just kidding, everything stays local)
 
-##Acknowledgments
+## Credits
 
-- ☕ 
-- 🎵 
+- **Deepgram** - For the API that actually works
+- **Coffee** - For making this possible
+- **That one Stack Overflow answer** - You know the one
+
+## License
+
+Do whatever you want with it. If it breaks, you get to keep both pieces.

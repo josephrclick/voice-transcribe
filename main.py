@@ -6,11 +6,9 @@ import io
 import wave
 import time
 import subprocess
-import collections
 import numpy as np
 import sounddevice as sd
 import pyperclip
-import torch
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
@@ -21,55 +19,38 @@ from dotenv import load_dotenv
 load_dotenv()
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-# VAD Configuration
+# Audio Configuration
 SAMPLE_RATE = 16000
-VAD_FRAME_MS = 30  # Silero VAD expects 30ms chunks
-VAD_FRAME_SIZE = int(SAMPLE_RATE * VAD_FRAME_MS / 1000)
-SPEECH_THRESHOLD = 0.5  # Probability threshold for speech
-MIN_SPEECH_DURATION_MS = 250  # Minimum speech duration to start recording
-MIN_SILENCE_DURATION_MS = 1500  # Silence duration to stop recording
+CHUNK_DURATION = 0.1  # 100ms chunks
 
 # Colors
 COLORS = {
-    'bg': '#1e1e2e',           # Dark background
-    'button_idle': '#45475a',   # Gray
-    'button_recording': '#f38ba8',  # Red/Pink
-    'button_success': '#a6e3a1',    # Green
-    'text': '#cdd6f4',         # Light text
-    'accent': '#89b4fa',       # Blue accent
-    'vad_active': '#fab387',   # Orange
+    'bg': '#1e1e2e',              # Dark background
+    'button_idle': '#45475a',      # Gray
+    'button_recording': '#f38ba8', # Red/Pink
+    'button_hover': '#89b4fa',     # Blue
+    'text': '#cdd6f4',            # Light text
+    'accent': '#89b4fa',          # Blue accent
+    'success': '#a6e3a1',         # Green
+    'danger': '#f38ba8',          # Red
 }
 
 class VoiceTranscribeApp:
     def __init__(self):
         self.recording = False
-        self.vad_active = False
-        self.audio_queue = collections.deque()
-        self.speech_buffer = []
-        self.is_speaking = False
-        self.silence_frames = 0
-        self.speech_frames = 0
+        self.audio_data = []
+        self.start_time = None
+        self.transcript_text = ""
         
         # Setup Deepgram
         self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
         
-        # Load Silero VAD
-        print("Loading Silero VAD model...")
-        self.vad_model, utils = torch.hub.load(
-            repo_or_dir='snakers4/silero-vad',
-            model='silero_vad',
-            force_reload=False,
-        trust_repo=True
-        )
-        self.vad_model.eval()
-        print("VAD model loaded!")
-        
         # Create window
         self.window = Gtk.Window()
-        self.window.set_title("Voice Transcribe v2")
-        self.window.set_default_size(400, 300)
+        self.window.set_title("Voice Transcribe v3")
+        self.window.set_default_size(450, 400)
         self.window.set_keep_above(True)
-        self.window.connect("destroy", self.on_destroy)
+        self.window.connect("destroy", Gtk.main_quit)
         
         # Apply CSS styling
         self.apply_css()
@@ -77,9 +58,12 @@ class VoiceTranscribeApp:
         # Create UI
         self.create_ui()
         
-        # Start audio monitoring thread for VAD
+        # Start audio monitoring thread
         self.monitor_thread = threading.Thread(target=self._monitor_audio, daemon=True)
         self.monitor_thread.start()
+        
+        # Start elapsed time updater
+        GLib.timeout_add(100, self._update_elapsed_time)
     
     def apply_css(self):
         """Apply custom CSS styling"""
@@ -94,24 +78,17 @@ class VoiceTranscribeApp:
             border: none;
             border-radius: 12px;
             padding: 20px;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: bold;
+            min-height: 80px;
         }}
         
         .main-button:hover {{
-            background-color: {COLORS['accent']};
+            background-color: {COLORS['button_hover']};
         }}
         
         .recording {{
             background-color: {COLORS['button_recording']};
-        }}
-        
-        .success {{
-            background-color: {COLORS['button_success']};
-        }}
-        
-        .vad-active {{
-            background-color: {COLORS['vad_active']};
         }}
         
         .status-label {{
@@ -120,31 +97,56 @@ class VoiceTranscribeApp:
             padding: 5px;
         }}
         
+        .stats-label {{
+            color: {COLORS['accent']};
+            font-size: 12px;
+            font-family: monospace;
+            padding: 3px;
+        }}
+        
         .transcript-view {{
             background-color: rgba(69, 71, 90, 0.5);
             color: {COLORS['text']};
             border-radius: 8px;
             padding: 10px;
             font-family: monospace;
+            font-size: 14px;
         }}
         
-        .mode-button {{
-            background-color: transparent;
+        .clipboard-status {{
+            color: {COLORS['success']};
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px;
+        }}
+        
+        .action-button {{
+            background-color: {COLORS['button_idle']};
             color: {COLORS['text']};
-            border: 1px solid {COLORS['accent']};
-            padding: 5px 10px;
-            margin: 5px;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            margin: 0 5px;
         }}
         
-        .mode-button:checked {{
+        .action-button:hover {{
             background-color: {COLORS['accent']};
-            color: {COLORS['bg']};
         }}
         
-        .vad-indicator {{
-            color: {COLORS['accent']};
-            font-family: monospace;
-            font-size: 12px;
+        .clear-button {{
+            background-color: {COLORS['danger']};
+        }}
+        
+        .clear-button:hover {{
+            background-color: #dc3545;
+        }}
+        
+        .header-box {{
+            background-color: rgba(69, 71, 90, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
         }}
         """
         
@@ -165,51 +167,85 @@ class VoiceTranscribeApp:
         main_box.set_margin_start(20)
         main_box.set_margin_end(20)
         
+        # Header box for title and stats
+        header_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        header_box.get_style_context().add_class("header-box")
+        
         # Status label
         self.status_label = Gtk.Label(label="Ready to transcribe")
         self.status_label.get_style_context().add_class("status-label")
-        main_box.pack_start(self.status_label, False, False, 0)
+        header_box.pack_start(self.status_label, False, False, 0)
         
-        # Mode selector
-        mode_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
-        mode_box.set_halign(Gtk.Align.CENTER)
+        # Stats box (horizontal)
+        stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
+        stats_box.set_halign(Gtk.Align.CENTER)
         
-        self.manual_radio = Gtk.RadioButton.new_with_label_from_widget(None, "Manual")
-        self.manual_radio.get_style_context().add_class("mode-button")
+        # Elapsed time
+        self.elapsed_label = Gtk.Label(label="Time: 0:00")
+        self.elapsed_label.get_style_context().add_class("stats-label")
+        stats_box.pack_start(self.elapsed_label, False, False, 0)
         
-        self.vad_radio = Gtk.RadioButton.new_with_label_from_widget(self.manual_radio, "Auto VAD")
-        self.vad_radio.get_style_context().add_class("mode-button")
+        # Word count
+        self.word_count_label = Gtk.Label(label="Words: 0")
+        self.word_count_label.get_style_context().add_class("stats-label")
+        stats_box.pack_start(self.word_count_label, False, False, 0)
         
-        mode_box.pack_start(self.manual_radio, False, False, 0)
-        mode_box.pack_start(self.vad_radio, False, False, 0)
-        main_box.pack_start(mode_box, False, False, 10)
+        header_box.pack_start(stats_box, False, False, 0)
+        main_box.pack_start(header_box, False, False, 0)
         
-        # Main button
+        # Main button with shortcut hint
+        button_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        
         self.button = Gtk.Button(label="Start Recording")
         self.button.connect("clicked", self.toggle_recording)
-        self.button.set_size_request(360, 80)
         self.button.get_style_context().add_class("main-button")
-        main_box.pack_start(self.button, False, False, 10)
+        button_box.pack_start(self.button, False, False, 0)
         
-        # VAD indicator
-        self.vad_indicator = Gtk.Label(label="")
-        self.vad_indicator.get_style_context().add_class("vad-indicator")
-        main_box.pack_start(self.vad_indicator, False, False, 0)
+        # Shortcut hint
+        shortcut_label = Gtk.Label(label="Press Ctrl+Q to toggle")
+        shortcut_label.get_style_context().add_class("stats-label")
+        button_box.pack_start(shortcut_label, False, False, 0)
         
-        # Transcript preview
-        self.transcript_label = Gtk.Label(label="Transcript will appear here...")
-        self.transcript_label.set_line_wrap(True)
-        self.transcript_label.set_max_width_chars(50)
-        self.transcript_label.set_ellipsize(Pango.EllipsizeMode.END)
-        self.transcript_label.get_style_context().add_class("status-label")
+        main_box.pack_start(button_box, False, False, 10)
+        
+        # Clipboard status
+        self.clipboard_label = Gtk.Label(label="")
+        self.clipboard_label.get_style_context().add_class("clipboard-status")
+        main_box.pack_start(self.clipboard_label, False, False, 0)
+        
+        # Transcript section with header
+        transcript_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        
+        transcript_title = Gtk.Label(label="Transcript:")
+        transcript_title.get_style_context().add_class("status-label")
+        transcript_header.pack_start(transcript_title, False, False, 0)
+        
+        # Spacer
+        transcript_header.pack_start(Gtk.Label(), True, True, 0)
+        
+        # Action buttons
+        self.copy_button = Gtk.Button(label="Copy")
+        self.copy_button.connect("clicked", self.copy_transcript)
+        self.copy_button.get_style_context().add_class("action-button")
+        self.copy_button.set_sensitive(False)
+        transcript_header.pack_start(self.copy_button, False, False, 0)
+        
+        self.clear_button = Gtk.Button(label="Clear")
+        self.clear_button.connect("clicked", self.clear_transcript)
+        self.clear_button.get_style_context().add_class("action-button")
+        self.clear_button.get_style_context().add_class("clear-button")
+        self.clear_button.set_sensitive(False)
+        transcript_header.pack_start(self.clear_button, False, False, 0)
+        
+        main_box.pack_start(transcript_header, False, False, 0)
         
         # Scrolled window for transcript
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_min_content_height(80)
+        scroll.set_min_content_height(150)
         scroll.get_style_context().add_class("transcript-view")
         
-        # Text view for longer transcripts
+        # Text view
         self.text_view = Gtk.TextView()
         self.text_view.set_editable(False)
         self.text_view.set_wrap_mode(Gtk.WrapMode.WORD)
@@ -218,81 +254,49 @@ class VoiceTranscribeApp:
         self.text_view.set_margin_top(10)
         self.text_view.set_margin_bottom(10)
         
+        # Set initial placeholder
+        buffer = self.text_view.get_buffer()
+        buffer.set_text("Your transcript will appear here...")
+        
         scroll.add(self.text_view)
         main_box.pack_start(scroll, True, True, 0)
         
         self.window.add(main_box)
         self.window.show_all()
     
-    def on_destroy(self, widget):
-        """Clean shutdown"""
-        self.recording = False
-        self.vad_active = False
-        Gtk.main_quit()
-    
     def toggle_recording(self, widget=None):
         """Toggle recording state"""
-        if self.vad_radio.get_active():
-            # Voice activated mode
-            if not self.vad_active:
-                self.start_vad_mode()
-            else:
-                self.stop_vad_mode()
+        if not self.recording:
+            self.start_recording()
         else:
-            # Manual mode
-            if not self.recording:
-                self.start_manual_recording()
-            else:
-                self.stop_manual_recording()
+            self.stop_recording()
     
-    def start_vad_mode(self):
-        """Start voice-activated recording mode"""
-        self.vad_active = True
-        self.audio_queue.clear()
-        self.speech_buffer = []
-        self.button.set_label("Stop VAD Mode")
-        self.button.get_style_context().add_class("vad-active")
-        self.status_label.set_text("🎤 Listening for speech...")
-    
-    def stop_vad_mode(self):
-        """Stop voice-activated recording mode"""
-        self.vad_active = False
-        self.button.get_style_context().remove_class("vad-active")
-        
-        # Process any accumulated speech
-        if self.speech_buffer:
-            self.status_label.set_text("Processing final audio...")
-            self._process_audio_buffer(self.speech_buffer)
-            self.speech_buffer = []
-        
-        self.button.set_label("Start Recording")
-        self.status_label.set_text("Ready to transcribe")
-        self.vad_indicator.set_text("")
-    
-    def start_manual_recording(self):
-        """Start manual recording"""
+    def start_recording(self):
+        """Start recording"""
         self.recording = True
-        self.audio_queue.clear()
+        self.audio_data = []
+        self.start_time = time.time()
+        
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
-        self.status_label.set_text("🔴 Recording...")
+        self.status_label.set_text("🔴 Recording... Speak now!")
+        
+        # Clear clipboard status
+        self.clipboard_label.set_text("")
     
-    def stop_manual_recording(self):
-        """Stop manual recording and process"""
+    def stop_recording(self):
+        """Stop recording and process"""
         self.recording = False
         self.button.get_style_context().remove_class("recording")
-        self.button.set_label("Processing...")
-        self.button.set_sensitive(False)
+        self.button.set_label("Start Recording")
         self.status_label.set_text("⏳ Processing audio...")
         
-        # Convert queue to list for processing
-        audio_data = list(self.audio_queue)
-        self.audio_queue.clear()
-        
-        if audio_data:
-            threading.Thread(target=self._process_audio_buffer, args=(audio_data,)).start()
+        # Process in background
+        if self.audio_data:
+            threading.Thread(target=self._process_audio).start()
         else:
-            self.reset_ui()
+            self.status_label.set_text("No audio recorded")
+            GLib.timeout_add_seconds(2, self._reset_status)
     
     def _monitor_audio(self):
         """Continuously monitor audio input"""
@@ -300,16 +304,8 @@ class VoiceTranscribeApp:
             if status:
                 print(f"Audio status: {status}")
             
-            # Add to queue if recording manually
             if self.recording:
-                self.audio_queue.append(indata.copy())
-            
-            # Process for VAD if active
-            if self.vad_active:
-                self.audio_queue.append(indata.copy())
-                # Keep only last few seconds in queue
-                while len(self.audio_queue) > 100:  # ~3 seconds
-                    self.audio_queue.popleft()
+                self.audio_data.append(indata.copy())
         
         # Start continuous audio stream
         with sd.InputStream(
@@ -317,77 +313,24 @@ class VoiceTranscribeApp:
             channels=1,
             dtype='float32',
             callback=audio_callback,
-            blocksize=VAD_FRAME_SIZE
+            blocksize=int(SAMPLE_RATE * CHUNK_DURATION)
         ):
             while True:
-                if self.vad_active and len(self.audio_queue) > 0:
-                    self._process_vad_frame()
-                time.sleep(0.01)
+                time.sleep(0.1)
     
-    def _process_vad_frame(self):
-        """Process audio frame with VAD"""
-        if not self.audio_queue:
-            return
-        
-        # Get audio frame
-        frame = self.audio_queue[-1]
-        
-        # Convert to tensor
-        audio_tensor = torch.FloatTensor(frame.flatten())
-        
-        # Run VAD
-        with torch.no_grad():
-            speech_prob = self.vad_model(audio_tensor, SAMPLE_RATE).item()
-        
-        # Update UI indicator
-        bars = int(speech_prob * 10)
-        indicator_text = f"{'▓' * bars}{'░' * (10 - bars)} {speech_prob:.2f}"
-        GLib.idle_add(self.vad_indicator.set_text, indicator_text)
-        
-        # Detect speech state changes
-        if speech_prob >= SPEECH_THRESHOLD:
-            self.speech_frames += 1
-            self.silence_frames = 0
-            
-            if not self.is_speaking and self.speech_frames >= MIN_SPEECH_DURATION_MS / VAD_FRAME_MS:
-                # Start of speech detected
-                self.is_speaking = True
-                GLib.idle_add(self.status_label.set_text, "🎤 Speech detected - recording...")
-                # Add buffered audio to speech buffer
-                self.speech_buffer.extend(list(self.audio_queue))
-            elif self.is_speaking:
-                # Continue adding to speech buffer
-                self.speech_buffer.append(frame)
-        else:
-            self.silence_frames += 1
-            self.speech_frames = 0
-            
-            if self.is_speaking:
-                # Add silence to buffer (for natural pauses)
-                self.speech_buffer.append(frame)
-                
-                if self.silence_frames >= MIN_SILENCE_DURATION_MS / VAD_FRAME_MS:
-                    # End of speech detected
-                    self.is_speaking = False
-                    GLib.idle_add(self.status_label.set_text, "⏳ Processing speech...")
-                    
-                    # Process the speech buffer
-                    threading.Thread(
-                        target=self._process_audio_buffer,
-                        args=(self.speech_buffer.copy(),)
-                    ).start()
-                    
-                    # Clear buffer for next utterance
-                    self.speech_buffer = []
+    def _update_elapsed_time(self):
+        """Update elapsed time display"""
+        if self.recording and self.start_time:
+            elapsed = time.time() - self.start_time
+            minutes = int(elapsed // 60)
+            seconds = int(elapsed % 60)
+            self.elapsed_label.set_text(f"Time: {minutes}:{seconds:02d}")
+        return True
     
-    def _process_audio_buffer(self, audio_data):
-        """Process accumulated audio data"""
-        if not audio_data:
-            GLib.idle_add(self.reset_ui)
-            return
-        
+    def _process_audio(self):
+        """Process recorded audio"""
         # Combine audio chunks
-        audio = np.concatenate(audio_data, axis=0)
+        audio = np.concatenate(self.audio_data, axis=0)
         duration = len(audio) / SAMPLE_RATE
         print(f"Processing {duration:.1f} seconds of audio")
         
@@ -407,12 +350,10 @@ class VoiceTranscribeApp:
         transcript = self._transcribe(audio_bytes)
         
         if transcript:
-            print(f"Transcript: {transcript}")
-            pyperclip.copy(transcript)
-            GLib.idle_add(self._show_success, transcript)
+            GLib.idle_add(self._show_transcript, transcript)
         else:
             GLib.idle_add(self.status_label.set_text, "❌ No speech detected")
-            GLib.idle_add(self.reset_ui)
+            GLib.timeout_add_seconds(2, self._reset_status)
     
     def _transcribe(self, audio_bytes):
         """Transcribe audio using Deepgram"""
@@ -448,27 +389,66 @@ class VoiceTranscribeApp:
             print(f"Transcription error: {e}")
             return None
     
-    def _show_success(self, transcript):
-        """Show success message and transcript"""
-        # Update status
-        self.status_label.set_text("✅ Transcribed successfully!")
+    def _show_transcript(self, transcript):
+        """Display transcript and update UI"""
+        self.transcript_text = transcript
         
-        # Show transcript in text view
+        # Update text view
         buffer = self.text_view.get_buffer()
         buffer.set_text(transcript)
         
-        # Update button
-        self.button.set_label("✓ Copied to Clipboard!")
-        self.button.get_style_context().add_class("success")
+        # Update word count
+        word_count = len(transcript.split())
+        self.word_count_label.set_text(f"Words: {word_count}")
         
-        # Try to paste automatically
+        # Update status
+        self.status_label.set_text("✅ Transcribed successfully!")
+        
+        # Copy to clipboard
+        pyperclip.copy(transcript)
+        self.clipboard_label.set_text("✓ Copied to Clipboard!")
+        
+        # Enable action buttons
+        self.copy_button.set_sensitive(True)
+        self.clear_button.set_sensitive(True)
+        
+        # Auto-paste if on X11
         threading.Thread(target=self._attempt_paste).start()
         
-        # Reset after delay
-        GLib.timeout_add_seconds(3, self.reset_ui)
+        # Clear status after delay
+        GLib.timeout_add_seconds(3, self._reset_status)
+    
+    def copy_transcript(self, widget):
+        """Copy transcript to clipboard"""
+        if self.transcript_text:
+            pyperclip.copy(self.transcript_text)
+            self.clipboard_label.set_text("✓ Copied to Clipboard!")
+            GLib.timeout_add_seconds(2, lambda: self.clipboard_label.set_text(""))
+    
+    def clear_transcript(self, widget):
+        """Clear the transcript"""
+        self.transcript_text = ""
+        
+        # Reset text view
+        buffer = self.text_view.get_buffer()
+        buffer.set_text("Your transcript will appear here...")
+        
+        # Reset counters
+        self.word_count_label.set_text("Words: 0")
+        self.elapsed_label.set_text("Time: 0:00")
+        
+        # Disable action buttons
+        self.copy_button.set_sensitive(False)
+        self.clear_button.set_sensitive(False)
+        
+        # Clear clipboard status
+        self.clipboard_label.set_text("")
+        
+        self.status_label.set_text("Transcript cleared")
+        GLib.timeout_add_seconds(2, self._reset_status)
     
     def _attempt_paste(self):
-        """Attempt to paste using available methods"""
+        """Attempt to paste using xdotool on X11"""
         session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
         
         if session_type == 'x11':
@@ -476,54 +456,27 @@ class VoiceTranscribeApp:
                 time.sleep(0.5)
                 subprocess.run(['xdotool', 'key', 'ctrl+v'], check=True)
                 print("Auto-pasted with xdotool")
-                return
             except:
                 pass
     
-    def reset_ui(self):
-        """Reset UI to ready state"""
-        self.button.get_style_context().remove_class("recording")
-        self.button.get_style_context().remove_class("success")
-        self.button.get_style_context().remove_class("vad-active")
-        self.button.set_sensitive(True)
-        
-        if self.vad_active:
-            self.button.set_label("Stop VAD Mode")
-            self.button.get_style_context().add_class("vad-active")
-            self.status_label.set_text("🎤 Listening for speech...")
-        else:
-            self.button.set_label("Start Recording")
-            self.status_label.set_text("Ready to transcribe")
-        
+    def _reset_status(self):
+        """Reset status to ready"""
+        self.status_label.set_text("Ready to transcribe")
         return False
 
-def toggle_from_command():
-    """Function to be called from command line for global hotkey"""
-    toggle_file = "/tmp/voice_transcribe_toggle"
-    with open(toggle_file, 'w') as f:
-        f.write("toggle")
-
 if __name__ == "__main__":
-    import sys
+    # Handle command line arguments
+    if len(sys.argv) > 1 and sys.argv[1] == "toggle":
+        # Send toggle signal to running instance
+        toggle_file = "/tmp/voice_transcribe_toggle"
+        with open(toggle_file, 'w') as f:
+            f.write("toggle")
+        sys.exit(0)
     
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "toggle":
-            # Send toggle signal to running instance
-            toggle_file = "/tmp/voice_transcribe_toggle"
-            with open(toggle_file, 'w') as f:
-                f.write("toggle")
-            sys.exit(0)
-        elif sys.argv[1] == "vad":
-            # Send VAD mode signal
-            toggle_file = "/tmp/voice_transcribe_vad"
-            with open(toggle_file, 'w') as f:
-                f.write("vad")
-            sys.exit(0)
-    
-    # Start the app
+    # Create app instance
     app = VoiceTranscribeApp()
     
-    # Set up file watchers for commands
+    # Set up toggle file watcher for Ctrl+Q support
     def check_toggle():
         toggle_file = "/tmp/voice_transcribe_toggle"
         if os.path.exists(toggle_file):
@@ -531,17 +484,7 @@ if __name__ == "__main__":
             app.toggle_recording()
         return True
     
-    def check_vad():
-        vad_file = "/tmp/voice_transcribe_vad"
-        if os.path.exists(vad_file):
-            os.remove(vad_file)
-            # Force VAD mode
-            app.vad_radio.set_active(True)
-            app.toggle_recording()
-        return True
-    
-    # Check for commands periodically
     GLib.timeout_add(100, check_toggle)
-    GLib.timeout_add(100, check_vad)
     
+    # Run the app
     Gtk.main()
