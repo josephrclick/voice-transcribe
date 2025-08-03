@@ -36,16 +36,20 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 git clone https://github.com/josephrclick/voice-transcribe.git
 cd voice-transcribe
 
+# Install system dependencies first (required for PyGObject)
+sudo apt update
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 libgirepository-2.0-dev
+
+# System deps for clipboard greatness
+sudo apt install xclip xdotool  # X11 users
+sudo apt install wl-clipboard    # Wayland folks
+
 # Virtual environment (because we're not savages)
 python3 -m venv venv
 source venv/bin/activate
 
 # Install the goods
 pip install -r requirements.txt
-
-# System deps for clipboard greatness
-sudo apt install xclip xdotool  # X11 users
-sudo apt install wl-clipboard    # Wayland folks
 
 # Add your Deepgram key (get one free at deepgram.com)
 echo "DEEPGRAM_API_KEY=your_key_here" > .env
