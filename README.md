@@ -18,6 +18,11 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 - 🎯 No Voice Activity Detection (turns out, buttons are fine)
 - 🔮 No mind reading (yet)
 
+## Screenshots
+
+### GUI - that's it. This is all there is.
+![Main Dashboard](./images/ss1.png)
+
 ## The Stack
 
 - **GTK 3** - Because native Linux apps deserve love

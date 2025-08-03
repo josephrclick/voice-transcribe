@@ -47,14 +47,14 @@ svg_icon = '''<?xml version="1.0" encoding="UTF-8"?>
 </svg>'''
 
 # Save SVG icon
-with open('$PROJECT_DIR/icon.svg', 'w') as f:
+with open('$PROJECT_DIR/images/icon.svg', 'w') as f:
     f.write(svg_icon)
 
 # Convert SVG to PNG using rsvg-convert if available
 import subprocess
 try:
     subprocess.run(['rsvg-convert', '--width=256', '--height=256', 
-                   '$PROJECT_DIR/icon.svg', '-o', '$PROJECT_DIR/icon.png'], 
+                   '$PROJECT_DIR/images/icon.svg', '-o', '$PROJECT_DIR/images/icon.png'], 
                    check=True, capture_output=True)
     print("Created PNG icon")
 except:
@@ -69,7 +69,7 @@ except:
         draw.arc([80, 140, 176, 200], start=180, end=0, fill='#cdd6f4', width=8)
         draw.rectangle([124, 200, 132, 220], fill='#cdd6f4')
         draw.rounded_rectangle([108, 220, 148, 228], radius=4, fill='#cdd6f4')
-        img.save('$PROJECT_DIR/icon.png')
+        img.save('$PROJECT_DIR/images/icon.png')
         print("Created PNG icon using PIL")
     except:
         print("Note: Install pillow for PNG icon: pip install pillow")
