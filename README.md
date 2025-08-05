@@ -1,6 +1,6 @@
-# Voice Transcribe v3 🎤
+# Voice Transcribe v3.2 🎤
 
-A delightfully simple voice-to-text tool for Linux that just works™. Click button, speak thoughts, get text. It's like magic, but with more Python.
+A delightfully simple voice-to-text tool for Linux that just works™. Click button, speak thoughts, get text. Now with ✨ Prompt Mode ✨ for AI-enhanced transcripts!
 
 ## What It Does (And Doesn't Do)
 
@@ -10,7 +10,9 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 - 📊 Counts your words so you know if you're being verbose
 - 📋 Auto-copies to clipboard because Ctrl+C is so 2023
 - 🎨 Dark theme that won't burn your retinas at 3am
-- ⌨️ Ctrl+Q toggle support (for the keyboard warriors)
+- ⌨️ Keyboard shortcuts: Ctrl+Q (record), Ctrl+Shift+Q (Prompt Mode)
+- ✨ **NEW: Prompt Mode** - Transforms your rambling into perfect LLM prompts
+- 🔄 **NEW: Dual copy buttons** - Copy original or enhanced separately
 - 🚀 Actually works, which is more than I can say for my first 17 projects
 
 **What it doesn't do:**
@@ -20,13 +22,15 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 
 ## Screenshots
 
-### GUI - that's it. This is all there is.
+### GUI - Now with side-by-side panels and dual copy buttons!
 ![Main Dashboard](./images/ss1-v32.png)
+*Left: Your actual words (with copy button). Right: What you meant to say (with its own copy button).*
 
 ## The Stack
 
 - **GTK 3** - Because native Linux apps deserve love
 - **Deepgram Nova-3** - The speech recognition that actually understands mumbling
+- **OpenAI GPT-4o-mini** - The prompt whisperer (for Prompt Mode)
 - **Python** - The language of "let's just ship it"
 
 ## Installation
@@ -53,6 +57,9 @@ pip install -r requirements.txt
 
 # Add your Deepgram key (get one free at deepgram.com)
 echo "DEEPGRAM_API_KEY=your_key_here" > .env
+
+# Add your OpenAI key for Prompt Mode (optional)
+echo "OPENAI_API_KEY=sk-your_key_here" >> .env
 ```
 
 ## Usage
@@ -73,7 +80,7 @@ cat > ~/.local/share/applications/voice-transcribe.desktop << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Voice Transcribe v3
+Name=Voice Transcribe v3.2
 Comment=Speech to text, but cooler
 Exec=bash -c "cd $HOME/voice-transcribe && source venv/bin/activate && python main.py"
 Icon=audio-input-microphone
@@ -87,11 +94,47 @@ EOF
 # Command: bash -c "cd $HOME/voice-transcribe && source venv/bin/activate && python main.py toggle"
 ```
 
-## Why v3?
+## ✨ Prompt Mode - The Game Changer
+
+Ever record a voice note and realize you sound like you're ordering coffee while solving world peace? Prompt Mode fixes that.
+
+### What is Prompt Mode?
+It's like having a tiny prompt engineer in your computer that takes your stream-of-consciousness rambling and turns it into the kind of prompt that makes LLMs go "Now THIS I can work with!"
+
+### How it Works
+1. **Enable Prompt Mode** - Check the box or hit Ctrl+Shift+Q
+2. **Choose your style:**
+   - **Concise**: For when you need to get to the point
+   - **Balanced**: The Goldilocks zone of prompts
+   - **Detailed**: For when you need the LLM to really get it
+3. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
+4. **Watch the magic** - See a preview while it enhances: "Enhancing: um, so like, I need a function that..."
+5. **Get enhanced** - "Create a Python function that reads CSV files, handles encoding issues, and provides error handling with clear documentation"
+6. **Copy what you need** - Separate copy buttons for original and enhanced versions
+
+### Side-by-Side View
+See your original transcript next to the enhanced version. It's like watching your thoughts get a makeover.
+
+### Example Transformations
+```
+Original: "can you help me fix this react thing where it keeps rerendering constantly and I don't know why"
+Enhanced: "Debug React component excessive rerendering issue. The component rerenders continuously without apparent state changes. Please analyze potential causes and provide solutions."
+
+Original: "write a python script that uh reads all the json files in a folder and combines them but only if they have a status field that's active"
+Enhanced: "Create a Python script with these requirements:
+- Read all JSON files from a specified directory
+- Filter files where 'status' field equals 'active'
+- Combine filtered data into a single output
+- Include error handling for invalid JSON"
+```
+
+## Why v3.2?
 
 - v1: "Hey, this could work!" (Narrator: it didn't)
 - v2: "Let's add ALL the features!" (Spoiler: too many features)
 - v3: "What if we just... made it work?" (Revolutionary concept)
+- v3.1: "What if your rambling made sense?" (Game changer)
+- v3.2: "What if we made it even smoother?" (Quick wins ftw)
 
 ## Features That Actually Exist
 
@@ -102,14 +145,19 @@ Because your eyes matter. Carefully crafted with Catppuccin-inspired colors that
 Watch the seconds tick by and words accumulate. It's like a fitness tracker, but for your mouth.
 
 ### 🔄 Action Buttons
-- **Copy**: In case the auto-copy wasn't enough
-- **Clear**: For when you realize what you just said
+- **Copy (Original)**: Get your raw, unfiltered thoughts
+- **Copy (Enhanced)**: Get the polished version
+- **Clear All**: For when you need a fresh start
 
 ### 🎯 Auto-paste (X11)
 On X11, it'll even paste for you. On Wayland? Well, Ctrl+V isn't that hard.
 
 ### 🔝 Always On Top
 Stays visible because out of sight, out of mind, and we can't have that.
+
+### ⌨️ Keyboard Shortcuts
+- **Ctrl+Q**: Toggle recording (works globally with desktop setup)
+- **Ctrl+Shift+Q**: Toggle Prompt Mode instantly
 
 ## Troubleshooting
 
@@ -131,6 +179,11 @@ Stays visible because out of sight, out of mind, and we can't have that.
 - They're like participation trophies - everyone gets them, nobody wants them
 - `export GTK_THEME=Adwaita` if they really bug you
 
+**"Prompt Mode isn't working!"**
+- Did you add your OpenAI API key to .env?
+- Check if you have OpenAI credits
+- If enhancement fails, you still get the original transcript
+
 ## What's NOT Coming Soon
 
 - 🎯 VAD (Voice Activity Detection) - Buttons are fine, actually
@@ -139,17 +192,27 @@ Stays visible because out of sight, out of mind, and we can't have that.
 
 ## What Might Come Eventually
 
-- 📝 History of your ramblings
+- 📝 History of your ramblings (and their enhanced versions)
 - 🌍 More language support
 - 🎨 Theme customization (for the 3 people who don't like dark mode)
+- 🤖 Direct LLM integration (skip the copy/paste dance)
+- 🎯 Smart routing to different LLMs based on prompt type
+- 💡 Context injection from clipboard/project files
 - ☁️ Cloud sync (just kidding, everything stays local)
 
 ## Credits
 
 - **Deepgram** - For the API that actually works
+- **OpenAI** - For making my rambling coherent
 - **Coffee** - For making this possible
 - **That one Stack Overflow answer** - You know the one
 
 ## License
 
 Do whatever you want with it. If it breaks, you get to keep both pieces.
+
+---
+
+*Built with ❤️ and mild frustration by someone who just wanted to dictate text without opening Google Docs*
+
+*"Simplicity is the ultimate sophistication" - Leonardo da Vinci (who probably would've loved voice transcription)*
