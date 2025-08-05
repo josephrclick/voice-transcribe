@@ -21,7 +21,7 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 ## Screenshots
 
 ### GUI - that's it. This is all there is.
-![Main Dashboard](./images/ss1.png)
+![Main Dashboard](./images/ss1-v32.png)
 
 ## The Stack
 
