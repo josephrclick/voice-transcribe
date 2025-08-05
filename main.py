@@ -6,6 +6,7 @@ import io
 import wave
 import time
 import subprocess
+import json
 import numpy as np
 import sounddevice as sd
 import pyperclip
@@ -14,6 +15,14 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
 from deepgram import DeepgramClient, PrerecordedOptions
 from dotenv import load_dotenv
+
+# Import our enhancement module
+try:
+    from enhance import enhance_prompt, get_enhancement_styles
+    ENHANCEMENT_AVAILABLE = True
+except ImportError:
+    print("Warning: enhance.py not found. Prompt Mode will be disabled.")
+    ENHANCEMENT_AVAILABLE = False
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +42,8 @@ COLORS = {
     'accent': '#89b4fa',          # Blue accent
     'success': '#a6e3a1',         # Green
     'danger': '#f38ba8',          # Red
+    'enhanced_bg': '#313244',     # Slightly lighter for enhanced panel
+    'warning': '#f9e2af',         # Yellow for warnings
 }
 
 class VoiceTranscribeApp:
@@ -41,22 +52,34 @@ class VoiceTranscribeApp:
         self.audio_data = []
         self.start_time = None
         self.transcript_text = ""
+        self.enhanced_text = ""
+        self.enhancement_error = None
+        
+        # Prompt Mode settings
+        self.prompt_mode_enabled = False
+        self.enhancement_style = "balanced"
+        
+        # Load saved preferences
+        self.load_preferences()
         
         # Setup Deepgram
         self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
         
         # Create window
         self.window = Gtk.Window()
-        self.window.set_title("Voice Transcribe v3")
-        self.window.set_default_size(450, 400)
+        self.window.set_title("Voice Transcribe v3.2")
+        self.window.set_default_size(700, 500)  # Wider for side-by-side
         self.window.set_keep_above(True)
-        self.window.connect("destroy", Gtk.main_quit)
+        self.window.connect("destroy", self.on_destroy)
         
         # Apply CSS styling
         self.apply_css()
         
         # Create UI
         self.create_ui()
+        
+        # Set up keyboard accelerators
+        self.setup_accelerators()
         
         # Start audio monitoring thread
         self.monitor_thread = threading.Thread(target=self._monitor_audio, daemon=True)
@@ -91,6 +114,10 @@ class VoiceTranscribeApp:
             background-color: {COLORS['button_recording']};
         }}
         
+        .prompt-mode-active {{
+            background-color: {COLORS['accent']};
+        }}
+        
         .status-label {{
             color: {COLORS['text']};
             font-size: 14px;
@@ -113,8 +140,29 @@ class VoiceTranscribeApp:
             font-size: 14px;
         }}
         
+        .enhanced-view {{
+            background-color: {COLORS['enhanced_bg']};
+            color: {COLORS['text']};
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 14px;
+        }}
+        
+        .enhancement-preview {{
+            color: {COLORS['accent']};
+            font-style: italic;
+        }}
+        
         .clipboard-status {{
             color: {COLORS['success']};
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px;
+        }}
+        
+        .enhancement-error {{
+            color: {COLORS['warning']};
             font-size: 13px;
             font-weight: bold;
             padding: 5px;
@@ -148,6 +196,17 @@ class VoiceTranscribeApp:
             padding: 10px;
             margin-bottom: 10px;
         }}
+        
+        .panel-header {{
+            color: {COLORS['text']};
+            font-size: 13px;
+            font-weight: bold;
+            padding: 5px 0;
+        }}
+        
+        .prompt-controls {{
+            padding: 5px;
+        }}
         """
         
         style_provider = Gtk.CssProvider()
@@ -158,6 +217,17 @@ class VoiceTranscribeApp:
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
     
+    def setup_accelerators(self):
+        """Set up keyboard shortcuts"""
+        accel_group = Gtk.AccelGroup()
+        self.window.add_accel_group(accel_group)
+        
+        # Ctrl+Shift+Q for Prompt Mode toggle
+        if ENHANCEMENT_AVAILABLE:
+            key, modifier = Gtk.accelerator_parse("<Control><Shift>q")
+            accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
+                              self.toggle_prompt_mode_accelerator)
+    
     def create_ui(self):
         """Create the user interface"""
         # Main container
@@ -167,18 +237,20 @@ class VoiceTranscribeApp:
         main_box.set_margin_start(20)
         main_box.set_margin_end(20)
         
-        # Header box for title and stats
-        header_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        # Header box with stats on left, prompt controls on right
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         header_box.get_style_context().add_class("header-box")
+        
+        # Left side: Status and stats
+        left_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         
         # Status label
         self.status_label = Gtk.Label(label="Ready to transcribe")
         self.status_label.get_style_context().add_class("status-label")
-        header_box.pack_start(self.status_label, False, False, 0)
+        left_box.pack_start(self.status_label, False, False, 0)
         
-        # Stats box (horizontal)
+        # Stats box
         stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
-        stats_box.set_halign(Gtk.Align.CENTER)
         
         # Elapsed time
         self.elapsed_label = Gtk.Label(label="Time: 0:00")
@@ -190,7 +262,37 @@ class VoiceTranscribeApp:
         self.word_count_label.get_style_context().add_class("stats-label")
         stats_box.pack_start(self.word_count_label, False, False, 0)
         
-        header_box.pack_start(stats_box, False, False, 0)
+        left_box.pack_start(stats_box, False, False, 0)
+        header_box.pack_start(left_box, False, False, 0)
+        
+        # Center spacer
+        header_box.pack_start(Gtk.Label(), True, True, 0)
+        
+        # Right side: Prompt Mode controls
+        if ENHANCEMENT_AVAILABLE:
+            prompt_controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            prompt_controls.get_style_context().add_class("prompt-controls")
+            
+            # Prompt Mode checkbox
+            self.prompt_mode_check = Gtk.CheckButton(label="Prompt Mode")
+            self.prompt_mode_check.set_active(self.prompt_mode_enabled)
+            self.prompt_mode_check.connect("toggled", self.on_prompt_mode_toggled)
+            prompt_controls.pack_start(self.prompt_mode_check, False, False, 0)
+            
+            # Style label
+            style_label = Gtk.Label(label="Style:")
+            prompt_controls.pack_start(style_label, False, False, 0)
+            
+            # Style dropdown
+            self.style_combo = Gtk.ComboBoxText()
+            for style in get_enhancement_styles():
+                self.style_combo.append_text(style.capitalize())
+            self.style_combo.set_active(get_enhancement_styles().index(self.enhancement_style))
+            self.style_combo.connect("changed", self.on_style_changed)
+            prompt_controls.pack_start(self.style_combo, False, False, 0)
+            
+            header_box.pack_end(prompt_controls, False, False, 0)
+        
         main_box.pack_start(header_box, False, False, 0)
         
         # Main button with shortcut hint
@@ -201,68 +303,212 @@ class VoiceTranscribeApp:
         self.button.get_style_context().add_class("main-button")
         button_box.pack_start(self.button, False, False, 0)
         
-        # Shortcut hint
-        shortcut_label = Gtk.Label(label="Press Ctrl+Q to toggle")
-        shortcut_label.get_style_context().add_class("stats-label")
-        button_box.pack_start(shortcut_label, False, False, 0)
+        # Shortcut hints
+        shortcuts_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        shortcuts_box.set_halign(Gtk.Align.CENTER)
+        
+        record_hint = Gtk.Label(label="Ctrl+Q: Toggle Recording")
+        record_hint.get_style_context().add_class("stats-label")
+        shortcuts_box.pack_start(record_hint, False, False, 0)
+        
+        if ENHANCEMENT_AVAILABLE:
+            separator = Gtk.Label(label="|")
+            separator.get_style_context().add_class("stats-label")
+            shortcuts_box.pack_start(separator, False, False, 0)
+            
+            prompt_hint = Gtk.Label(label="Ctrl+Shift+Q: Toggle Prompt Mode")
+            prompt_hint.get_style_context().add_class("stats-label")
+            shortcuts_box.pack_start(prompt_hint, False, False, 0)
+        
+        button_box.pack_start(shortcuts_box, False, False, 0)
         
         main_box.pack_start(button_box, False, False, 10)
         
-        # Clipboard status
+        # Status labels (clipboard and enhancement)
+        status_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        
         self.clipboard_label = Gtk.Label(label="")
         self.clipboard_label.get_style_context().add_class("clipboard-status")
-        main_box.pack_start(self.clipboard_label, False, False, 0)
+        status_box.pack_start(self.clipboard_label, False, False, 0)
         
-        # Transcript section with header
-        transcript_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self.enhancement_label = Gtk.Label(label="")
+        self.enhancement_label.get_style_context().add_class("enhancement-error")
+        status_box.pack_start(self.enhancement_label, False, False, 0)
         
-        transcript_title = Gtk.Label(label="Transcript:")
-        transcript_title.get_style_context().add_class("status-label")
-        transcript_header.pack_start(transcript_title, False, False, 0)
+        main_box.pack_start(status_box, False, False, 0)
+        
+        # Clear button header (aligned right)
+        clear_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         
         # Spacer
-        transcript_header.pack_start(Gtk.Label(), True, True, 0)
+        clear_header.pack_start(Gtk.Label(), True, True, 0)
         
-        # Action buttons
-        self.copy_button = Gtk.Button(label="Copy")
-        self.copy_button.connect("clicked", self.copy_transcript)
-        self.copy_button.get_style_context().add_class("action-button")
-        self.copy_button.set_sensitive(False)
-        transcript_header.pack_start(self.copy_button, False, False, 0)
-        
-        self.clear_button = Gtk.Button(label="Clear")
+        # Clear button
+        self.clear_button = Gtk.Button(label="Clear All")
         self.clear_button.connect("clicked", self.clear_transcript)
         self.clear_button.get_style_context().add_class("action-button")
         self.clear_button.get_style_context().add_class("clear-button")
         self.clear_button.set_sensitive(False)
-        transcript_header.pack_start(self.clear_button, False, False, 0)
+        clear_header.pack_end(self.clear_button, False, False, 0)
         
-        main_box.pack_start(transcript_header, False, False, 0)
+        main_box.pack_start(clear_header, False, False, 5)
         
-        # Scrolled window for transcript
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scroll.set_min_content_height(150)
-        scroll.get_style_context().add_class("transcript-view")
+        # Side-by-side transcript panels
+        panels_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         
-        # Text view
-        self.text_view = Gtk.TextView()
-        self.text_view.set_editable(False)
-        self.text_view.set_wrap_mode(Gtk.WrapMode.WORD)
-        self.text_view.set_margin_start(10)
-        self.text_view.set_margin_end(10)
-        self.text_view.set_margin_top(10)
-        self.text_view.set_margin_bottom(10)
+        # Original transcript panel
+        original_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         
-        # Set initial placeholder
-        buffer = self.text_view.get_buffer()
+        # Original header with copy button
+        original_header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        
+        original_header = Gtk.Label(label="Original Transcript")
+        original_header.get_style_context().add_class("panel-header")
+        original_header_box.pack_start(original_header, False, False, 0)
+        
+        # Spacer
+        original_header_box.pack_start(Gtk.Label(), True, True, 0)
+        
+        # Copy original button
+        self.copy_original_button = Gtk.Button(label="Copy")
+        self.copy_original_button.connect("clicked", self.copy_original)
+        self.copy_original_button.get_style_context().add_class("action-button")
+        self.copy_original_button.set_sensitive(False)
+        original_header_box.pack_start(self.copy_original_button, False, False, 0)
+        
+        original_panel.pack_start(original_header_box, False, False, 0)
+        
+        # Original transcript scroll
+        original_scroll = Gtk.ScrolledWindow()
+        original_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        original_scroll.set_min_content_height(200)
+        original_scroll.get_style_context().add_class("transcript-view")
+        
+        self.original_text_view = Gtk.TextView()
+        self.original_text_view.set_editable(False)
+        self.original_text_view.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.original_text_view.set_margin_start(10)
+        self.original_text_view.set_margin_end(10)
+        self.original_text_view.set_margin_top(10)
+        self.original_text_view.set_margin_bottom(10)
+        
+        buffer = self.original_text_view.get_buffer()
         buffer.set_text("Your transcript will appear here...")
         
-        scroll.add(self.text_view)
-        main_box.pack_start(scroll, True, True, 0)
+        original_scroll.add(self.original_text_view)
+        original_panel.pack_start(original_scroll, True, True, 0)
+        
+        panels_box.pack_start(original_panel, True, True, 0)
+        
+        # Enhanced prompt panel (only if enhancement available)
+        if ENHANCEMENT_AVAILABLE:
+            enhanced_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            
+            # Enhanced header with copy button
+            enhanced_header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            
+            enhanced_header = Gtk.Label(label="✨ Enhanced Prompt")
+            enhanced_header.get_style_context().add_class("panel-header")
+            enhanced_header_box.pack_start(enhanced_header, False, False, 0)
+            
+            # Spacer
+            enhanced_header_box.pack_start(Gtk.Label(), True, True, 0)
+            
+            # Copy enhanced button
+            self.copy_enhanced_button = Gtk.Button(label="Copy")
+            self.copy_enhanced_button.connect("clicked", self.copy_enhanced)
+            self.copy_enhanced_button.get_style_context().add_class("action-button")
+            self.copy_enhanced_button.set_sensitive(False)
+            enhanced_header_box.pack_start(self.copy_enhanced_button, False, False, 0)
+            
+            enhanced_panel.pack_start(enhanced_header_box, False, False, 0)
+            
+            # Enhanced prompt scroll
+            enhanced_scroll = Gtk.ScrolledWindow()
+            enhanced_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            enhanced_scroll.set_min_content_height(200)
+            enhanced_scroll.get_style_context().add_class("enhanced-view")
+            
+            self.enhanced_text_view = Gtk.TextView()
+            self.enhanced_text_view.set_editable(False)
+            self.enhanced_text_view.set_wrap_mode(Gtk.WrapMode.WORD)
+            self.enhanced_text_view.set_margin_start(10)
+            self.enhanced_text_view.set_margin_end(10)
+            self.enhanced_text_view.set_margin_top(10)
+            self.enhanced_text_view.set_margin_bottom(10)
+            
+            buffer = self.enhanced_text_view.get_buffer()
+            buffer.set_text("Enhanced prompt will appear here when Prompt Mode is enabled...")
+            
+            enhanced_scroll.add(self.enhanced_text_view)
+            enhanced_panel.pack_start(enhanced_scroll, True, True, 0)
+            
+            panels_box.pack_start(enhanced_panel, True, True, 0)
+        
+        main_box.pack_start(panels_box, True, True, 0)
         
         self.window.add(main_box)
         self.window.show_all()
+    
+    def on_prompt_mode_toggled(self, widget):
+        """Handle Prompt Mode toggle"""
+        self.prompt_mode_enabled = widget.get_active()
+        self.save_preferences()
+        
+        if self.prompt_mode_enabled:
+            self.button.get_style_context().add_class("prompt-mode-active")
+        else:
+            self.button.get_style_context().remove_class("prompt-mode-active")
+    
+    def toggle_prompt_mode_accelerator(self, *args):
+        """Handle Ctrl+Shift+Q accelerator - directly toggle without focusing"""
+        # Toggle the checkbox state
+        new_state = not self.prompt_mode_check.get_active()
+        self.prompt_mode_check.set_active(new_state)
+        
+        # Remove focus from the checkbox to prevent visual highlighting
+        self.window.set_focus(None)
+        
+        # Flash a quick visual feedback
+        if new_state:
+            self.status_label.set_text("✨ Prompt Mode enabled")
+        else:
+            self.status_label.set_text("Prompt Mode disabled")
+        
+        # Clear status after a short delay
+        GLib.timeout_add_seconds(1.5, self._reset_status)
+        
+        return True
+    
+    def on_style_changed(self, widget):
+        """Handle enhancement style change"""
+        styles = get_enhancement_styles()
+        self.enhancement_style = styles[widget.get_active()]
+        self.save_preferences()
+    
+    def save_preferences(self):
+        """Save user preferences to config file"""
+        prefs = {
+            "prompt_mode_enabled": self.prompt_mode_enabled,
+            "enhancement_style": self.enhancement_style
+        }
+        try:
+            with open("config.json", "w") as f:
+                json.dump(prefs, f)
+        except:
+            pass  # Fail silently
+    
+    def load_preferences(self):
+        """Load user preferences from config file"""
+        try:
+            with open("config.json", "r") as f:
+                prefs = json.load(f)
+                self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
+                self.enhancement_style = prefs.get("enhancement_style", "balanced")
+        except:
+            # Use defaults if no config exists
+            self.prompt_mode_enabled = False
+            self.enhancement_style = "balanced"
     
     def toggle_recording(self, widget=None):
         """Toggle recording state"""
@@ -281,8 +527,9 @@ class VoiceTranscribeApp:
         self.button.get_style_context().add_class("recording")
         self.status_label.set_text("🔴 Recording... Speak now!")
         
-        # Clear clipboard status
+        # Clear status labels
         self.clipboard_label.set_text("")
+        self.enhancement_label.set_text("")
     
     def stop_recording(self):
         """Stop recording and process"""
@@ -392,9 +639,11 @@ class VoiceTranscribeApp:
     def _show_transcript(self, transcript):
         """Display transcript and update UI"""
         self.transcript_text = transcript
+        self.enhanced_text = ""
+        self.enhancement_error = None
         
-        # Update text view
-        buffer = self.text_view.get_buffer()
+        # Update original text view
+        buffer = self.original_text_view.get_buffer()
         buffer.set_text(transcript)
         
         # Update word count
@@ -404,13 +653,71 @@ class VoiceTranscribeApp:
         # Update status
         self.status_label.set_text("✅ Transcribed successfully!")
         
-        # Copy to clipboard
-        pyperclip.copy(transcript)
-        self.clipboard_label.set_text("✓ Copied to Clipboard!")
-        
         # Enable action buttons
-        self.copy_button.set_sensitive(True)
+        self.copy_original_button.set_sensitive(True)
         self.clear_button.set_sensitive(True)
+        
+        # Handle enhancement if Prompt Mode is enabled
+        if ENHANCEMENT_AVAILABLE and self.prompt_mode_enabled:
+            # Show enhancing status
+            GLib.idle_add(self.enhancement_label.set_text, "✨ Enhancing prompt...")
+            
+            # Show preview in enhanced view
+            enhanced_buffer = self.enhanced_text_view.get_buffer()
+            preview = transcript[:50] + "..." if len(transcript) > 50 else transcript
+            enhanced_buffer.set_text(f"Enhancing: {preview}\n\n⏳ Please wait...")
+            
+            # Enhance in background
+            threading.Thread(target=self._enhance_transcript, args=(transcript,)).start()
+        else:
+            # Just copy original to clipboard
+            self._copy_to_clipboard(transcript)
+    
+    def _enhance_transcript(self, transcript):
+        """Enhance transcript in background"""
+        enhanced, error = enhance_prompt(transcript, self.enhancement_style)
+        
+        if enhanced:
+            self.enhanced_text = enhanced
+            GLib.idle_add(self._show_enhanced_transcript, enhanced)
+        else:
+            self.enhancement_error = error
+            GLib.idle_add(self._show_enhancement_error, error)
+    
+    def _show_enhanced_transcript(self, enhanced):
+        """Display enhanced transcript"""
+        # Update enhanced text view
+        buffer = self.enhanced_text_view.get_buffer()
+        buffer.set_text(enhanced)
+        
+        # Enable copy enhanced button
+        self.copy_enhanced_button.set_sensitive(True)
+        
+        # Clear enhancement status
+        self.enhancement_label.set_text("")
+        
+        # Copy enhanced version to clipboard
+        self._copy_to_clipboard(enhanced)
+    
+    def _show_enhancement_error(self, error):
+        """Display enhancement error"""
+        # Show error
+        self.enhancement_label.set_text(f"⚠️ Enhancement failed: {error}")
+        
+        # Update enhanced view
+        buffer = self.enhanced_text_view.get_buffer()
+        buffer.set_text(f"Enhancement failed: {error}\n\nUsing original transcript.")
+        
+        # Copy original to clipboard as fallback
+        self._copy_to_clipboard(self.transcript_text)
+        
+        # Clear error after delay
+        GLib.timeout_add_seconds(5, lambda: self.enhancement_label.set_text(""))
+    
+    def _copy_to_clipboard(self, text):
+        """Copy text to clipboard and update UI"""
+        pyperclip.copy(text)
+        self.clipboard_label.set_text("✓ Copied to Clipboard!")
         
         # Auto-paste if on X11
         threading.Thread(target=self._attempt_paste).start()
@@ -418,31 +725,50 @@ class VoiceTranscribeApp:
         # Clear status after delay
         GLib.timeout_add_seconds(3, self._reset_status)
     
-    def copy_transcript(self, widget):
-        """Copy transcript to clipboard"""
+    def copy_original(self, widget):
+        """Copy original transcript to clipboard"""
         if self.transcript_text:
             pyperclip.copy(self.transcript_text)
-            self.clipboard_label.set_text("✓ Copied to Clipboard!")
+            self.clipboard_label.set_text("✓ Copied Original to Clipboard!")
             GLib.timeout_add_seconds(2, lambda: self.clipboard_label.set_text(""))
+    
+    def copy_enhanced(self, widget):
+        """Copy enhanced transcript to clipboard"""
+        if self.enhanced_text:
+            pyperclip.copy(self.enhanced_text)
+            self.clipboard_label.set_text("✓ Copied Enhanced to Clipboard!")
+            GLib.timeout_add_seconds(2, lambda: self.clipboard_label.set_text(""))
+        else:
+            # Fallback to original if no enhanced version
+            self.copy_original(widget)
     
     def clear_transcript(self, widget):
         """Clear the transcript"""
         self.transcript_text = ""
+        self.enhanced_text = ""
+        self.enhancement_error = None
         
-        # Reset text view
-        buffer = self.text_view.get_buffer()
+        # Reset text views
+        buffer = self.original_text_view.get_buffer()
         buffer.set_text("Your transcript will appear here...")
+        
+        if ENHANCEMENT_AVAILABLE:
+            buffer = self.enhanced_text_view.get_buffer()
+            buffer.set_text("Enhanced prompt will appear here when Prompt Mode is enabled...")
         
         # Reset counters
         self.word_count_label.set_text("Words: 0")
         self.elapsed_label.set_text("Time: 0:00")
         
         # Disable action buttons
-        self.copy_button.set_sensitive(False)
+        self.copy_original_button.set_sensitive(False)
         self.clear_button.set_sensitive(False)
+        if ENHANCEMENT_AVAILABLE:
+            self.copy_enhanced_button.set_sensitive(False)
         
-        # Clear clipboard status
+        # Clear status labels
         self.clipboard_label.set_text("")
+        self.enhancement_label.set_text("")
         
         self.status_label.set_text("Transcript cleared")
         GLib.timeout_add_seconds(2, self._reset_status)
@@ -463,6 +789,11 @@ class VoiceTranscribeApp:
         """Reset status to ready"""
         self.status_label.set_text("Ready to transcribe")
         return False
+    
+    def on_destroy(self, widget):
+        """Save preferences before closing"""
+        self.save_preferences()
+        Gtk.main_quit()
 
 if __name__ == "__main__":
     # Handle command line arguments
