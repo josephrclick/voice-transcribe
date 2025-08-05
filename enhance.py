@@ -77,7 +77,7 @@ def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[s
             ],
             max_tokens=1000,
             temperature=0.3,  # Lower temperature for consistency
-            timeout=5.0  # 5 second timeout
+            timeout=15.0  # 15 second timeout for longer transcriptions
         )
         
         enhanced = response.choices[0].message.content.strip()
@@ -89,7 +89,7 @@ def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[s
         return enhanced, None
         
     except openai.APITimeoutError:
-        return None, "Enhancement timed out (5s limit)"
+        return None, "Enhancement timed out (15s limit)"
     except openai.APIConnectionError:
         return None, "Connection error - check internet"
     except openai.APIError as e:
