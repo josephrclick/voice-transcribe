@@ -27,6 +27,9 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+if not DEEPGRAM_API_KEY:
+    print("Error: DEEPGRAM_API_KEY is not set. Please set the environment variable and restart.")
+    sys.exit(1)
 
 # Audio Configuration
 SAMPLE_RATE = 16000
@@ -61,10 +64,12 @@ class VoiceTranscribeApp:
         
         # Load saved preferences
         self.load_preferences()
-        
-        # Setup Deepgram
-        self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
-        
+
+        # Setup Deepgram only if API key is available
+        self.deepgram = None
+        if DEEPGRAM_API_KEY:
+            self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+
         # Create window
         self.window = Gtk.Window()
         self.window.set_title("Voice Transcribe v3.2")
