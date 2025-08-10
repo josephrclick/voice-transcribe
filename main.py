@@ -4,9 +4,11 @@ import sys
 import threading
 import io
 import wave
+import tempfile
 import time
 import subprocess
 import json
+import logging
 import numpy as np
 import sounddevice as sd
 import pyperclip
@@ -24,6 +26,8 @@ except ImportError:
     print("Warning: enhance.py not found. Prompt Mode will be disabled.")
     ENHANCEMENT_AVAILABLE = False
 
+logging.basicConfig(level=logging.INFO)
+    
 # Load environment variables
 load_dotenv()
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
@@ -52,7 +56,9 @@ COLORS = {
 class VoiceTranscribeApp:
     def __init__(self):
         self.recording = False
-        self.audio_data = []
+        self.audio_stream = None
+        self.wav_writer = None
+        self.total_frames = 0
         self.start_time = None
         self.transcript_text = ""
         self.enhanced_text = ""
@@ -500,9 +506,12 @@ class VoiceTranscribeApp:
         try:
             with open("config.json", "w") as f:
                 json.dump(prefs, f)
-        except:
-            pass  # Fail silently
-    
+        except OSError as e:
+            logging.error("Failed to save preferences: %s", e)
+            print("Unable to save preferences. Please check file permissions.")
+            if hasattr(self, "status_label"):
+                self.status_label.set_text("⚠️ Unable to save preferences")
+
     def load_preferences(self):
         """Load user preferences from config file"""
         try:
@@ -510,8 +519,10 @@ class VoiceTranscribeApp:
                 prefs = json.load(f)
                 self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
                 self.enhancement_style = prefs.get("enhancement_style", "balanced")
-        except:
-            # Use defaults if no config exists
+        except (OSError, json.JSONDecodeError) as e:
+            logging.error("Failed to load preferences: %s", e)
+            print("Unable to load preferences. Defaults will be used.")
+            # Use defaults if no config exists or file is invalid
             self.prompt_mode_enabled = False
             self.enhancement_style = "balanced"
     
@@ -525,7 +536,12 @@ class VoiceTranscribeApp:
     def start_recording(self):
         """Start recording"""
         self.recording = True
-        self.audio_data = []
+        self.audio_stream = tempfile.TemporaryFile()
+        self.wav_writer = wave.open(self.audio_stream, 'wb')
+        self.wav_writer.setnchannels(1)
+        self.wav_writer.setsampwidth(2)
+        self.wav_writer.setframerate(SAMPLE_RATE)
+        self.total_frames = 0
         self.start_time = time.time()
         
         self.button.set_label("Stop Recording")
@@ -542,22 +558,28 @@ class VoiceTranscribeApp:
         self.button.get_style_context().remove_class("recording")
         self.button.set_label("Start Recording")
         self.status_label.set_text("⏳ Processing audio...")
-        
-        # Process in background
-        if self.audio_data:
-            threading.Thread(target=self._process_audio).start()
-        else:
-            self.status_label.set_text("No audio recorded")
-            GLib.timeout_add_seconds(2, self._reset_status)
+
+        if self.wav_writer:
+            self.wav_writer.close()
+
+        if self.audio_stream:
+            self.audio_stream.seek(0)
+            if self.total_frames > 0:
+                threading.Thread(target=self._process_audio).start()
+            else:
+                self.status_label.set_text("No audio recorded")
+                GLib.timeout_add_seconds(2, self._reset_status)
     
     def _monitor_audio(self):
         """Continuously monitor audio input"""
         def audio_callback(indata, frames, time, status):
             if status:
                 print(f"Audio status: {status}")
-            
-            if self.recording:
-                self.audio_data.append(indata.copy())
+
+            if self.recording and self.wav_writer:
+                audio_int16 = (indata.copy() * 32767).astype(np.int16)
+                self.wav_writer.writeframes(audio_int16.tobytes())
+                self.total_frames += len(audio_int16)
         
         # Start continuous audio stream
         with sd.InputStream(
@@ -581,26 +603,21 @@ class VoiceTranscribeApp:
     
     def _process_audio(self):
         """Process recorded audio"""
-        # Combine audio chunks
-        audio = np.concatenate(self.audio_data, axis=0)
-        duration = len(audio) / SAMPLE_RATE
+        if not self.audio_stream:
+            return
+
+        duration = self.total_frames / SAMPLE_RATE
         print(f"Processing {duration:.1f} seconds of audio")
-        
-        # Convert to WAV format
-        wav_buffer = io.BytesIO()
-        with wave.open(wav_buffer, 'wb') as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(SAMPLE_RATE)
-            audio_int16 = (audio * 32767).astype(np.int16)
-            wav_file.writeframes(audio_int16.tobytes())
-        
-        wav_buffer.seek(0)
-        audio_bytes = wav_buffer.read()
-        
-        # Transcribe
+
+        self.audio_stream.seek(0)
+        audio_bytes = self.audio_stream.read()
+        self.audio_stream.close()
+        self.audio_stream = None
+        self.wav_writer = None
+        self.total_frames = 0
+
         transcript = self._transcribe(audio_bytes)
-        
+
         if transcript:
             GLib.idle_add(self._show_transcript, transcript)
         else:
