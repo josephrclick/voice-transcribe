@@ -7,6 +7,7 @@ import wave
 import time
 import subprocess
 import json
+import logging
 import numpy as np
 import sounddevice as sd
 import pyperclip
@@ -27,6 +28,7 @@ except ImportError:
 # Load environment variables
 load_dotenv()
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+logging.basicConfig(level=logging.INFO)
 
 # Audio Configuration
 SAMPLE_RATE = 16000
@@ -495,9 +497,12 @@ class VoiceTranscribeApp:
         try:
             with open("config.json", "w") as f:
                 json.dump(prefs, f)
-        except:
-            pass  # Fail silently
-    
+        except OSError as e:
+            logging.error("Failed to save preferences: %s", e)
+            print("Unable to save preferences. Please check file permissions.")
+            if hasattr(self, "status_label"):
+                self.status_label.set_text("⚠️ Unable to save preferences")
+
     def load_preferences(self):
         """Load user preferences from config file"""
         try:
@@ -505,8 +510,10 @@ class VoiceTranscribeApp:
                 prefs = json.load(f)
                 self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
                 self.enhancement_style = prefs.get("enhancement_style", "balanced")
-        except:
-            # Use defaults if no config exists
+        except (OSError, json.JSONDecodeError) as e:
+            logging.error("Failed to load preferences: %s", e)
+            print("Unable to load preferences. Defaults will be used.")
+            # Use defaults if no config exists or file is invalid
             self.prompt_mode_enabled = False
             self.enhancement_style = "balanced"
     
