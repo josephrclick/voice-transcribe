@@ -83,6 +83,9 @@ class VoiceTranscribeApp:
         if DEEPGRAM_API_KEY:
             self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
 
+        # Live streaming client (initialized when live mode is enabled)
+        self.live_client = None
+
         # Create window
         self.window = Gtk.Window()
         self.window.set_title("Voice Transcribe v3.2")
@@ -676,10 +679,21 @@ class VoiceTranscribeApp:
             if status:
                 print(f"Audio status: {status}")
 
-            if self.recording and self.wav_writer:
+            if self.recording:
+                # Convert incoming float32 data to 16-bit PCM
                 audio_int16 = (indata.copy() * 32767).astype(np.int16)
-                self.wav_writer.writeframes(audio_int16.tobytes())
-                self.total_frames += len(audio_int16)
+
+                if self.wav_writer:
+                    self.wav_writer.writeframes(audio_int16.tobytes())
+                    self.total_frames += len(audio_int16)
+
+                if self.recording and self.live_client:
+                    try:
+                        self.live_client.send(audio_int16.tobytes())
+                    except Exception as e:
+                        print(f"Live send error: {e}")
+                        # Disable live mode and fall back to REST
+                        self.live_client = None
         
         # Start continuous audio stream
         with sd.InputStream(
