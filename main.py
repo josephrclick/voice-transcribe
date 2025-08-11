@@ -15,7 +15,12 @@ import pyperclip
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
-from deepgram import DeepgramClient, PrerecordedOptions
+from deepgram import (
+    DeepgramClient,
+    PrerecordedOptions,
+    LiveOptions,
+    LiveTranscriptionEvents,
+)
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 
@@ -41,7 +46,7 @@ SAMPLE_RATE = 16000
 CHUNK_DURATION = 0.1  # 100ms chunks
 
 # History configuration
-HISTORY_FILE = os.path.expanduser("~/.local/share/voice-transcribe/history.json")
+HISTORY_FILE = os.path.expanduser("~/.local/share/voice-transcribe/history.jsonl")
 
 # Colors
 COLORS = {
@@ -72,11 +77,12 @@ class VoiceTranscribeApp:
         self.prompt_mode_enabled = False
         self.enhancement_style = "balanced"
 
+        # History settings
+        self.history_enabled = True
+        self.history_limit = 500
+
         # Load saved preferences
         self.load_preferences()
-
-        # Load history entries
-        self.history: List[Dict[str, Optional[str]]] = self.load_history()
 
         # Setup Deepgram only if API key is available
         self.deepgram = None
@@ -242,7 +248,12 @@ class VoiceTranscribeApp:
         """Set up keyboard shortcuts"""
         accel_group = Gtk.AccelGroup()
         self.window.add_accel_group(accel_group)
-        
+
+        # Ctrl+H to open history window
+        key, modifier = Gtk.accelerator_parse("<Control>h")
+        accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
+                            self.show_history_accelerator)
+
         # Ctrl+Shift+Q for Prompt Mode toggle
         if ENHANCEMENT_AVAILABLE:
             key, modifier = Gtk.accelerator_parse("<Control><Shift>q")
@@ -504,7 +515,12 @@ class VoiceTranscribeApp:
         
         # Clear status after a short delay
         GLib.timeout_add_seconds(1.5, self._reset_status)
-        
+
+        return True
+
+    def show_history_accelerator(self, *args):
+        """Handle Ctrl+H accelerator"""
+        self.show_history()
         return True
     
     def on_style_changed(self, widget):
@@ -517,7 +533,9 @@ class VoiceTranscribeApp:
         """Save user preferences to config file"""
         prefs = {
             "prompt_mode_enabled": self.prompt_mode_enabled,
-            "enhancement_style": self.enhancement_style
+            "enhancement_style": self.enhancement_style,
+            "history_enabled": self.history_enabled,
+            "history_limit": self.history_limit,
         }
         try:
             with open("config.json", "w") as f:
@@ -535,99 +553,116 @@ class VoiceTranscribeApp:
                 prefs = json.load(f)
                 self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
                 self.enhancement_style = prefs.get("enhancement_style", "balanced")
+                self.history_enabled = prefs.get("history_enabled", True)
+                self.history_limit = prefs.get("history_limit", 500)
         except (OSError, json.JSONDecodeError) as e:
             logging.error("Failed to load preferences: %s", e)
             print("Unable to load preferences. Defaults will be used.")
             # Use defaults if no config exists or file is invalid
             self.prompt_mode_enabled = False
             self.enhancement_style = "balanced"
+            self.history_enabled = True
+            self.history_limit = 500
 
     def load_history(self) -> List[Dict[str, Optional[str]]]:
-        """Load transcript history from HISTORY_FILE"""
+        """Load history entries from JSONL file"""
+        entries: List[Dict[str, Optional[str]]] = []
         try:
             with open(HISTORY_FILE, "r") as f:
-                data = json.load(f)
-                if isinstance(data, list):
-                    return data
-        except (OSError, json.JSONDecodeError):
+                for line in f:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
             pass
-        return []
-
-    def save_history(self) -> None:
-        """Persist history to disk, keeping only latest 50 entries"""
-        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
-        self.history = self.history[-50:]
-        try:
-            with open(HISTORY_FILE, "w") as f:
-                json.dump(self.history, f)
-        except OSError as e:
-            logging.error("Failed to save history: %s", e)
+        return entries
 
     def _add_to_history(self, original: str, enhanced: Optional[str]) -> None:
-        """Add an entry to history and save"""
+        """Append an entry to history file respecting limits"""
         entry = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "original": original,
             "enhanced": enhanced,
+            "style": self.enhancement_style,
         }
-        self.history.append(entry)
-        self.save_history()
+        try:
+            os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+            with open(HISTORY_FILE, "a") as f:
+                f.write(json.dumps(entry) + "\n")
 
-    def show_history(self, widget):
-        """Display history dialog"""
-        dialog = Gtk.Dialog(title="History", transient_for=self.window, flags=0)
-        dialog.add_button("Clear History", Gtk.ResponseType.APPLY)
-        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
-        dialog.set_default_size(600, 400)
+            # Enforce history limit
+            with open(HISTORY_FILE, "r") as f:
+                lines = f.readlines()
+            if len(lines) > self.history_limit:
+                lines = lines[-self.history_limit:]
+                with open(HISTORY_FILE, "w") as f:
+                    f.writelines(lines)
+        except OSError as e:
+            logging.error("Failed to write history: %s", e)
 
-        content = dialog.get_content_area()
+    def show_history(self, widget=None):
+        """Display history window with search and copy"""
+        if hasattr(self, "history_window") and self.history_window:
+            self.history_window.present()
+            return
+
+        self.history_window = Gtk.Window(title="History")
+        self.history_window.set_default_size(600, 400)
+        self.history_window.connect("destroy", lambda _w: setattr(self, "history_window", None))
+
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        vbox.set_margin_top(10)
+        vbox.set_margin_bottom(10)
+        vbox.set_margin_start(10)
+        vbox.set_margin_end(10)
+        self.history_window.add(vbox)
+
+        search_entry = Gtk.SearchEntry()
+        vbox.pack_start(search_entry, False, False, 0)
+
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        content.pack_start(scrolled, True, True, 0)
+        vbox.pack_start(scrolled, True, True, 0)
 
-        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        list_box = Gtk.ListBox()
+        list_box.set_activate_on_single_click(True)
         scrolled.add(list_box)
 
-        if not self.history:
-            list_box.pack_start(Gtk.Label(label="No history yet."), False, False, 0)
-        else:
-            for entry in reversed(self.history):
-                entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-                ts_label = Gtk.Label(label=entry.get("timestamp", ""))
-                ts_label.set_xalign(0)
-                ts_label.get_style_context().add_class("stats-label")
-                entry_box.pack_start(ts_label, False, False, 0)
+        entries = self.load_history()
+        for entry in reversed(entries):
+            ts = entry.get("timestamp", "")
+            orig = entry.get("original", "")
+            row = Gtk.ListBoxRow()
+            label = Gtk.Label(label=f"{ts} - {orig}", xalign=0)
+            label.set_line_wrap(True)
+            row.add(label)
+            row.transcript = orig
+            list_box.add(row)
 
-                orig_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
-                orig_label = Gtk.Label(label=entry.get("original", ""))
-                orig_label.set_xalign(0)
-                orig_label.set_line_wrap(True)
-                orig_box.pack_start(orig_label, True, True, 0)
-                orig_btn = Gtk.Button(label="Copy Original")
-                orig_btn.connect("clicked", lambda _w, text=entry.get("original", ""): self._copy_to_clipboard(text))
-                orig_box.pack_end(orig_btn, False, False, 0)
-                entry_box.pack_start(orig_box, False, False, 0)
+            enhanced = entry.get("enhanced")
+            if enhanced:
+                style = entry.get("style", "")
+                row_e = Gtk.ListBoxRow()
+                label_e = Gtk.Label(label=f"{ts} [{style}] - {enhanced}", xalign=0)
+                label_e.set_line_wrap(True)
+                row_e.add(label_e)
+                row_e.transcript = enhanced
+                list_box.add(row_e)
 
-                enhanced_text = entry.get("enhanced")
-                if enhanced_text:
-                    enh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
-                    enh_label = Gtk.Label(label=enhanced_text)
-                    enh_label.set_xalign(0)
-                    enh_label.set_line_wrap(True)
-                    enh_box.pack_start(enh_label, True, True, 0)
-                    enh_btn = Gtk.Button(label="Copy Enhanced")
-                    enh_btn.connect("clicked", lambda _w, text=enhanced_text: self._copy_to_clipboard(text))
-                    enh_box.pack_end(enh_btn, False, False, 0)
-                    entry_box.pack_start(enh_box, False, False, 0)
+        def on_search(_entry):
+            text = search_entry.get_text().lower()
+            for row in list_box.get_children():
+                row.set_visible(text in row.transcript.lower())
 
-                list_box.pack_start(entry_box, False, False, 10)
+        def on_row_activated(_lb, row):
+            if row and getattr(row, "transcript", None):
+                self._copy_to_clipboard(row.transcript)
 
-        dialog.show_all()
-        response = dialog.run()
-        if response == Gtk.ResponseType.APPLY:
-            self.history = []
-            self.save_history()
-        dialog.destroy()
+        list_box.connect("row-activated", on_row_activated)
+        search_entry.connect("search-changed", on_search)
+
+        self.history_window.show_all()
     
     def toggle_recording(self, widget=None):
         """Toggle recording state"""
@@ -646,6 +681,33 @@ class VoiceTranscribeApp:
         self.wav_writer.setframerate(SAMPLE_RATE)
         self.total_frames = 0
         self.start_time = time.time()
+
+        if self.use_live and self.deepgram:
+            try:
+                self.live_client = self.deepgram.listen.live.v("1")
+
+                def on_transcript(client, result, **kwargs):
+                    if getattr(result, "is_final", False):
+                        transcript = result.channel.alternatives[0].transcript
+                        if transcript:
+                            GLib.idle_add(self._show_transcript, transcript.strip())
+
+                def on_close(client, *args, **kwargs):
+                    self.live_client = None
+
+                self.live_client.on(LiveTranscriptionEvents.Transcript, on_transcript)
+                self.live_client.on(LiveTranscriptionEvents.Close, on_close)
+
+                options = LiveOptions(
+                    model="nova-3",
+                    language="en",
+                    punctuate=True,
+                    smart_format=True,
+                )
+                self.live_client.start(options)
+            except Exception as e:
+                print(f"Live client error: {e}")
+                self.live_client = None
         
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
@@ -668,7 +730,22 @@ class VoiceTranscribeApp:
         if self.audio_stream:
             self.audio_stream.seek(0)
             if self.total_frames > 0:
-                threading.Thread(target=self._process_audio).start()
+                if self.live_client and self.live_client.is_connected():
+                    try:
+                        self.live_client.finalize()
+                        self.live_client.finish()
+                    except Exception as e:
+                        print(f"Live close error: {e}")
+                        threading.Thread(target=self._process_audio).start()
+                    finally:
+                        self.live_client = None
+
+                    self.audio_stream.close()
+                    self.audio_stream = None
+                    self.wav_writer = None
+                    self.total_frames = 0
+                else:
+                    threading.Thread(target=self._process_audio).start()
             else:
                 self.status_label.set_text("No audio recorded")
                 GLib.timeout_add_seconds(2, self._reset_status)
@@ -810,7 +887,8 @@ class VoiceTranscribeApp:
             self._copy_to_clipboard(transcript)
 
         # Add to history (enhanced will be added separately if available)
-        self._add_to_history(transcript, None)
+        if self.history_enabled:
+            self._add_to_history(transcript, None)
     
     def _enhance_transcript(self, transcript):
         """Enhance transcript in background"""
@@ -839,7 +917,8 @@ class VoiceTranscribeApp:
         self._copy_to_clipboard(enhanced)
 
         # Add enhanced transcript to history
-        self._add_to_history(self.transcript_text, enhanced)
+        if self.history_enabled:
+            self._add_to_history(self.transcript_text, enhanced)
     
     def _show_enhancement_error(self, error):
         """Display enhancement error"""
