@@ -91,6 +91,10 @@ class VoiceTranscribeApp:
 
         # Live streaming client (initialized when live mode is enabled)
         self.live_client = None
+        self.use_live = True
+        self.confirmed_text = ""
+        self.partial_mark = None
+        self.partial_tag = None
 
         # Create window
         self.window = Gtk.Window()
@@ -429,9 +433,10 @@ class VoiceTranscribeApp:
         self.original_text_view.set_margin_end(10)
         self.original_text_view.set_margin_top(10)
         self.original_text_view.set_margin_bottom(10)
-        
+
         buffer = self.original_text_view.get_buffer()
         buffer.set_text("Your transcript will appear here...")
+        self.partial_tag = buffer.create_tag("partial", foreground="#888888")
         
         original_scroll.add(self.original_text_view)
         original_panel.pack_start(original_scroll, True, True, 0)
@@ -682,15 +687,21 @@ class VoiceTranscribeApp:
         self.total_frames = 0
         self.start_time = time.time()
 
+        # Reset live transcript state and view
+        buffer = self.original_text_view.get_buffer()
+        buffer.set_text("")
+        self.confirmed_text = ""
+        self.partial_mark = None
+
         if self.use_live and self.deepgram:
             try:
                 self.live_client = self.deepgram.listen.live.v("1")
 
                 def on_transcript(client, result, **kwargs):
-                    if getattr(result, "is_final", False):
-                        transcript = result.channel.alternatives[0].transcript
-                        if transcript:
-                            GLib.idle_add(self._show_transcript, transcript.strip())
+                    transcript = result.channel.alternatives[0].transcript
+                    if transcript:
+                        is_final = getattr(result, "is_final", False)
+                        GLib.idle_add(self._update_live_transcript, transcript.strip(), is_final)
 
                 def on_close(client, *args, **kwargs):
                     self.live_client = None
@@ -734,6 +745,7 @@ class VoiceTranscribeApp:
                     try:
                         self.live_client.finalize()
                         self.live_client.finish()
+                        GLib.idle_add(self._show_transcript, self.confirmed_text.strip())
                     except Exception as e:
                         print(f"Live close error: {e}")
                         threading.Thread(target=self._process_audio).start()
@@ -782,7 +794,28 @@ class VoiceTranscribeApp:
         ):
             while True:
                 time.sleep(0.1)
-    
+
+    def _update_live_transcript(self, text, is_final):
+        """Update the transcript view with partial and final results."""
+        buffer = self.original_text_view.get_buffer()
+
+        if self.partial_mark is None:
+            end_iter = buffer.get_end_iter()
+            self.partial_mark = buffer.create_mark(None, end_iter, True)
+
+        start_iter = buffer.get_iter_at_mark(self.partial_mark)
+        buffer.delete(start_iter, buffer.get_end_iter())
+        buffer.insert(buffer.get_end_iter(), text)
+
+        if is_final:
+            buffer.remove_tag(self.partial_tag, start_iter, buffer.get_end_iter())
+            buffer.insert(buffer.get_end_iter(), " ")
+            self.confirmed_text += text + " "
+            self.partial_mark = None
+        else:
+            buffer.apply_tag(self.partial_tag, start_iter, buffer.get_end_iter())
+        return False
+
     def _update_elapsed_time(self):
         """Update elapsed time display"""
         if self.recording and self.start_time:
