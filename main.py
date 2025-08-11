@@ -15,7 +15,12 @@ import pyperclip
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
-from deepgram import DeepgramClient, PrerecordedOptions
+from deepgram import (
+    DeepgramClient,
+    PrerecordedOptions,
+    LiveOptions,
+    LiveTranscriptionEvents,
+)
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 
@@ -83,6 +88,10 @@ class VoiceTranscribeApp:
         self.deepgram = None
         if DEEPGRAM_API_KEY:
             self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+
+        # Live transcription attributes
+        self.live_client = None
+        self.use_live = True
 
         # Create window
         self.window = Gtk.Window()
@@ -673,6 +682,33 @@ class VoiceTranscribeApp:
         self.wav_writer.setframerate(SAMPLE_RATE)
         self.total_frames = 0
         self.start_time = time.time()
+
+        if self.use_live and self.deepgram:
+            try:
+                self.live_client = self.deepgram.listen.live.v("1")
+
+                def on_transcript(client, result, **kwargs):
+                    if getattr(result, "is_final", False):
+                        transcript = result.channel.alternatives[0].transcript
+                        if transcript:
+                            GLib.idle_add(self._show_transcript, transcript.strip())
+
+                def on_close(client, *args, **kwargs):
+                    self.live_client = None
+
+                self.live_client.on(LiveTranscriptionEvents.Transcript, on_transcript)
+                self.live_client.on(LiveTranscriptionEvents.Close, on_close)
+
+                options = LiveOptions(
+                    model="nova-3",
+                    language="en",
+                    punctuate=True,
+                    smart_format=True,
+                )
+                self.live_client.start(options)
+            except Exception as e:
+                print(f"Live client error: {e}")
+                self.live_client = None
         
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
@@ -695,7 +731,22 @@ class VoiceTranscribeApp:
         if self.audio_stream:
             self.audio_stream.seek(0)
             if self.total_frames > 0:
-                threading.Thread(target=self._process_audio).start()
+                if self.live_client and self.live_client.is_connected():
+                    try:
+                        self.live_client.finalize()
+                        self.live_client.finish()
+                    except Exception as e:
+                        print(f"Live close error: {e}")
+                        threading.Thread(target=self._process_audio).start()
+                    finally:
+                        self.live_client = None
+
+                    self.audio_stream.close()
+                    self.audio_stream = None
+                    self.wav_writer = None
+                    self.total_frames = 0
+                else:
+                    threading.Thread(target=self._process_audio).start()
             else:
                 self.status_label.set_text("No audio recorded")
                 GLib.timeout_add_seconds(2, self._reset_status)
@@ -710,6 +761,9 @@ class VoiceTranscribeApp:
                 audio_int16 = (indata.copy() * 32767).astype(np.int16)
                 self.wav_writer.writeframes(audio_int16.tobytes())
                 self.total_frames += len(audio_int16)
+
+                if self.live_client and self.live_client.is_connected():
+                    self.live_client.send(audio_int16.tobytes())
         
         # Start continuous audio stream
         with sd.InputStream(
