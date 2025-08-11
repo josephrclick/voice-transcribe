@@ -17,6 +17,7 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
 from deepgram import DeepgramClient, PrerecordedOptions
 from dotenv import load_dotenv
+from typing import List, Dict, Optional
 
 # Import our enhancement module
 try:
@@ -38,6 +39,9 @@ if not DEEPGRAM_API_KEY:
 # Audio Configuration
 SAMPLE_RATE = 16000
 CHUNK_DURATION = 0.1  # 100ms chunks
+
+# History configuration
+HISTORY_FILE = os.path.expanduser("~/.local/share/voice-transcribe/history.json")
 
 # Colors
 COLORS = {
@@ -67,9 +71,12 @@ class VoiceTranscribeApp:
         # Prompt Mode settings
         self.prompt_mode_enabled = False
         self.enhancement_style = "balanced"
-        
+
         # Load saved preferences
         self.load_preferences()
+
+        # Load history entries
+        self.history: List[Dict[str, Optional[str]]] = self.load_history()
 
         # Setup Deepgram only if API key is available
         self.deepgram = None
@@ -350,10 +357,10 @@ class VoiceTranscribeApp:
         
         # Clear button header (aligned right)
         clear_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        
+
         # Spacer
         clear_header.pack_start(Gtk.Label(), True, True, 0)
-        
+
         # Clear button
         self.clear_button = Gtk.Button(label="Clear All")
         self.clear_button.connect("clicked", self.clear_transcript)
@@ -361,7 +368,13 @@ class VoiceTranscribeApp:
         self.clear_button.get_style_context().add_class("clear-button")
         self.clear_button.set_sensitive(False)
         clear_header.pack_end(self.clear_button, False, False, 0)
-        
+
+        # History button
+        self.history_button = Gtk.Button(label="History")
+        self.history_button.connect("clicked", self.show_history)
+        self.history_button.get_style_context().add_class("action-button")
+        clear_header.pack_end(self.history_button, False, False, 0)
+
         main_box.pack_start(clear_header, False, False, 5)
         
         # Side-by-side transcript panels
@@ -525,6 +538,93 @@ class VoiceTranscribeApp:
             # Use defaults if no config exists or file is invalid
             self.prompt_mode_enabled = False
             self.enhancement_style = "balanced"
+
+    def load_history(self) -> List[Dict[str, Optional[str]]]:
+        """Load transcript history from HISTORY_FILE"""
+        try:
+            with open(HISTORY_FILE, "r") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except (OSError, json.JSONDecodeError):
+            pass
+        return []
+
+    def save_history(self) -> None:
+        """Persist history to disk, keeping only latest 50 entries"""
+        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        self.history = self.history[-50:]
+        try:
+            with open(HISTORY_FILE, "w") as f:
+                json.dump(self.history, f)
+        except OSError as e:
+            logging.error("Failed to save history: %s", e)
+
+    def _add_to_history(self, original: str, enhanced: Optional[str]) -> None:
+        """Add an entry to history and save"""
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "original": original,
+            "enhanced": enhanced,
+        }
+        self.history.append(entry)
+        self.save_history()
+
+    def show_history(self, widget):
+        """Display history dialog"""
+        dialog = Gtk.Dialog(title="History", transient_for=self.window, flags=0)
+        dialog.add_button("Clear History", Gtk.ResponseType.APPLY)
+        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        dialog.set_default_size(600, 400)
+
+        content = dialog.get_content_area()
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        content.pack_start(scrolled, True, True, 0)
+
+        list_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        scrolled.add(list_box)
+
+        if not self.history:
+            list_box.pack_start(Gtk.Label(label="No history yet."), False, False, 0)
+        else:
+            for entry in reversed(self.history):
+                entry_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+                ts_label = Gtk.Label(label=entry.get("timestamp", ""))
+                ts_label.set_xalign(0)
+                ts_label.get_style_context().add_class("stats-label")
+                entry_box.pack_start(ts_label, False, False, 0)
+
+                orig_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                orig_label = Gtk.Label(label=entry.get("original", ""))
+                orig_label.set_xalign(0)
+                orig_label.set_line_wrap(True)
+                orig_box.pack_start(orig_label, True, True, 0)
+                orig_btn = Gtk.Button(label="Copy Original")
+                orig_btn.connect("clicked", lambda _w, text=entry.get("original", ""): self._copy_to_clipboard(text))
+                orig_box.pack_end(orig_btn, False, False, 0)
+                entry_box.pack_start(orig_box, False, False, 0)
+
+                enhanced_text = entry.get("enhanced")
+                if enhanced_text:
+                    enh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+                    enh_label = Gtk.Label(label=enhanced_text)
+                    enh_label.set_xalign(0)
+                    enh_label.set_line_wrap(True)
+                    enh_box.pack_start(enh_label, True, True, 0)
+                    enh_btn = Gtk.Button(label="Copy Enhanced")
+                    enh_btn.connect("clicked", lambda _w, text=enhanced_text: self._copy_to_clipboard(text))
+                    enh_box.pack_end(enh_btn, False, False, 0)
+                    entry_box.pack_start(enh_box, False, False, 0)
+
+                list_box.pack_start(entry_box, False, False, 10)
+
+        dialog.show_all()
+        response = dialog.run()
+        if response == Gtk.ResponseType.APPLY:
+            self.history = []
+            self.save_history()
+        dialog.destroy()
     
     def toggle_recording(self, widget=None):
         """Toggle recording state"""
@@ -694,6 +794,9 @@ class VoiceTranscribeApp:
         else:
             # Just copy original to clipboard
             self._copy_to_clipboard(transcript)
+
+        # Add to history (enhanced will be added separately if available)
+        self._add_to_history(transcript, None)
     
     def _enhance_transcript(self, transcript):
         """Enhance transcript in background"""
@@ -717,9 +820,12 @@ class VoiceTranscribeApp:
         
         # Clear enhancement status
         self.enhancement_label.set_text("")
-        
+
         # Copy enhanced version to clipboard
         self._copy_to_clipboard(enhanced)
+
+        # Add enhanced transcript to history
+        self._add_to_history(self.transcript_text, enhanced)
     
     def _show_enhancement_error(self, error):
         """Display enhancement error"""
