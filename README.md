@@ -45,8 +45,9 @@ sudo apt update
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 libgirepository-2.0-dev
 
 # System deps for clipboard greatness
-sudo apt install xclip xdotool  # X11 users
-sudo apt install wl-clipboard    # Wayland folks
+sudo apt install xclip xdotool          # X11 users
+sudo apt install wl-clipboard           # Wayland clipboard
+sudo apt install wtype                  # Optional: Wayland auto-paste
 
 # Virtual environment (because we're not savages)
 python3 -m venv venv
@@ -149,8 +150,8 @@ Watch the seconds tick by and words accumulate. It's like a fitness tracker, but
 - **Copy (Enhanced)**: Get the polished version
 - **Clear All**: For when you need a fresh start
 
-### 🎯 Auto-paste (X11)
-On X11, it'll even paste for you. On Wayland? Well, Ctrl+V isn't that hard.
+### 🎯 Auto-paste
+On X11, it'll even paste for you via xdotool. On Wayland, install `wtype` for automatic pasting (otherwise use Ctrl+V).
 
 ### 🔝 Always On Top
 Stays visible because out of sight, out of mind, and we can't have that.
@@ -172,7 +173,7 @@ Stays visible because out of sight, out of mind, and we can't have that.
 - Is the internet on?
 
 **"Auto-paste isn't working!"**
-- Using Wayland? That's a feature, not a bug. Use Ctrl+V.
+- Using Wayland? Install `wtype` for auto-paste or use Ctrl+V.
 - On X11? Make sure xdotool is installed and you clicked where you want to paste
 
 **"I see GTK warnings!"**
