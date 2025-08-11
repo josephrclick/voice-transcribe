@@ -902,15 +902,22 @@ class VoiceTranscribeApp:
         GLib.timeout_add_seconds(2, self._reset_status)
     
     def _attempt_paste(self):
-        """Attempt to paste using xdotool on X11"""
+        """Attempt to paste using available clipboard tools"""
         session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
-        
+
         if session_type == 'x11':
             try:
                 time.sleep(0.5)
                 subprocess.run(['xdotool', 'key', 'ctrl+v'], check=True)
                 print("Auto-pasted with xdotool")
-            except:
+            except Exception:
+                pass
+        elif session_type == 'wayland':
+            try:
+                time.sleep(0.5)
+                subprocess.run(['wtype', pyperclip.paste()], check=True)
+                print("Auto-pasted with wtype")
+            except Exception:
                 pass
     
     def _reset_status(self):
