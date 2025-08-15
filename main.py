@@ -89,7 +89,7 @@ class VoiceTranscribeApp:
         if DEEPGRAM_API_KEY:
             self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
 
-        # Live streaming client (initialized when live mode is enabled)
+        # WebSocket streaming client (initialized when live mode is enabled)
         self.live_client = None
         self.use_live = True
         self.confirmed_text = ""
@@ -695,7 +695,8 @@ class VoiceTranscribeApp:
 
         if self.use_live and self.deepgram:
             try:
-                self.live_client = self.deepgram.listen.live.v("1")
+                # Use Deepgram's WebSocket API for real-time transcription
+                self.live_client = self.deepgram.listen.websocket.v("1")
 
                 def on_transcript(client, result, **kwargs):
                     transcript = result.channel.alternatives[0].transcript
@@ -717,7 +718,7 @@ class VoiceTranscribeApp:
                 )
                 self.live_client.start(options)
             except Exception as e:
-                print(f"Live client error: {e}")
+                print(f"WebSocket client error: {e}")
                 self.live_client = None
         
         self.button.set_label("Stop Recording")
@@ -747,7 +748,7 @@ class VoiceTranscribeApp:
                         self.live_client.finish()
                         GLib.idle_add(self._show_transcript, self.confirmed_text.strip())
                     except Exception as e:
-                        print(f"Live close error: {e}")
+                        print(f"WebSocket close error: {e}")
                         threading.Thread(target=self._process_audio).start()
                     finally:
                         self.live_client = None
@@ -780,8 +781,8 @@ class VoiceTranscribeApp:
                     try:
                         self.live_client.send(audio_int16.tobytes())
                     except Exception as e:
-                        print(f"Live send error: {e}")
-                        # Disable live mode and fall back to REST
+                        print(f"WebSocket send error: {e}")
+                        # Disable WebSocket mode and fall back to REST
                         self.live_client = None
         
         # Start continuous audio stream
