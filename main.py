@@ -62,6 +62,9 @@ COLORS = {
     'warning': '#f9e2af',         # Yellow for warnings
 }
 
+# Application
+APP_TITLE = "Voice Transcribe v3.2"
+
 class VoiceTranscribeApp:
     def __init__(self):
         self.recording = False
@@ -98,7 +101,7 @@ class VoiceTranscribeApp:
 
         # Create window
         self.window = Gtk.Window()
-        self.window.set_title("Voice Transcribe v3.2")
+        self.window.set_title(APP_TITLE)
         self.window.set_default_size(700, 500)  # Wider for side-by-side
         self.window.set_keep_above(True)
         self.window.connect("destroy", self.on_destroy)
@@ -724,7 +727,9 @@ class VoiceTranscribeApp:
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
         self.status_label.set_text("🔴 Recording... Speak now!")
-        
+        self.window.set_title(f"{APP_TITLE} - Recording")
+        self.window.set_urgency_hint(True)
+
         # Clear status labels
         self.clipboard_label.set_text("")
         self.enhancement_label.set_text("")
@@ -735,6 +740,8 @@ class VoiceTranscribeApp:
         self.button.get_style_context().remove_class("recording")
         self.button.set_label("Start Recording")
         self.status_label.set_text("⏳ Processing audio...")
+        self.window.set_urgency_hint(False)
+        self.window.set_title(APP_TITLE)
 
         if self.wav_writer:
             self.wav_writer.close()
