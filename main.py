@@ -19,9 +19,8 @@ from gi.repository import Gtk, GLib, Gdk, Pango
 from deepgram import (
     DeepgramClient,
     PrerecordedOptions,
-    LiveOptions,
-    LiveTranscriptionEvents,
 )
+from deepgram_service import DeepgramService
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 
@@ -88,20 +87,29 @@ class VoiceTranscribeApp:
         # Load saved preferences
         self.load_preferences()
 
-        # Setup Deepgram only if API key is available
-        self.deepgram = None
-        if DEEPGRAM_API_KEY:
-            self.deepgram = DeepgramClient(DEEPGRAM_API_KEY)
-
-        # WebSocket streaming client (initialized when live mode is enabled)
-        self.live_client = None
+        # Streaming configuration
         self.use_live = True
         self.confirmed_text = ""
         self.partial_mark = None
         self.partial_tag = None
         self.max_retries = 5
-        self.reconnect_attempts = 0
-        self.reconnecting = False
+
+        # Setup Deepgram client and service
+        self.deepgram_client = None
+        self.deepgram_service = None
+        if DEEPGRAM_API_KEY:
+            self.deepgram_client = DeepgramClient(DEEPGRAM_API_KEY)
+            self.deepgram_service = DeepgramService(
+                self.deepgram_client,
+                on_transcript=lambda text, is_final: GLib.idle_add(
+                    self._update_live_transcript, text, is_final
+                ),
+                on_reconnect=lambda attempt: GLib.idle_add(
+                    self.status_label.set_text,
+                    f"Reconnecting... ({attempt}/{self.max_retries})",
+                ),
+                max_retries=self.max_retries,
+            )
 
         # Create window
         self.window = Gtk.Window()
@@ -695,122 +703,14 @@ class VoiceTranscribeApp:
         self.total_frames = 0
         self.start_time = time.time()
 
-    def _schedule_reconnect(self) -> None:
-        """Attempt to (re)connect the live client in a background thread."""
-        if self.reconnecting or not self.use_live or not self.deepgram or not self.recording:
-            return
-
-        self.reconnecting = True
-
-        def worker():
-            success = self._connect_live_client()
-            if not success:
-                # Inform user that we will fall back to offline processing
-                GLib.idle_add(
-                    self.status_label.set_text,
-                    "Live connection failed. Using fallback.",
-                )
-            self.reconnecting = False
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _connect_live_client(self) -> bool:
-        """Connect to Deepgram's live transcription with retries."""
-        attempt = 0
-        delay = 1
-        while attempt < self.max_retries and self.recording and self.use_live:
-            try:
-
-                # Use Deepgram's WebSocket API for real-time transcription
-                logging.debug("Initializing Deepgram WebSocket client")
-                self.live_client = self.deepgram.listen.websocket.v("1")
-
-                def on_transcript(_client, result, **_kwargs):
-                    transcript = ""
-                    is_final = False
-                    logging.debug("Raw transcript event: %s", result)
-                    try:
-                        if isinstance(result, dict):
-                            transcript = (
-                                result.get("channel", {})
-                                    .get("alternatives", [{}])[0]
-                                    .get("transcript", "")
-                            )
-                            is_final = result.get("is_final", False)
-                        else:
-                            transcript = result.channel.alternatives[0].transcript
-                            is_final = getattr(result, "is_final", False)
-                    except Exception as e:
-                        print(f"Transcript parse error: {e}")
-                        return
-
-                    if transcript:
-                        logging.debug(
-                            "Received %s transcript: %s",
-                            "final" if is_final else "partial",
-                            transcript,
-                        )
-                        GLib.idle_add(
-                            self._update_live_transcript,
-                            transcript.strip(),
-                            is_final,
-                        )
-
-
-                def on_close(client, *args, **kwargs):
-                    logging.debug("WebSocket connection closed: %s %s", args, kwargs)
-
-                def on_close(_client, *args, **kwargs):
-                    self.live_client = None
-                    self._schedule_reconnect()
-
-                client.on(LiveTranscriptionEvents.Transcript, on_transcript)
-                client.on(LiveTranscriptionEvents.Close, on_close)
-
-                options = LiveOptions(
-                    model="nova-3",
-                    language="en",
-                    punctuate=True,
-                    smart_format=True,
-                )
-
-                logging.debug("Starting WebSocket with options: %s", options)
-                self.live_client.start(options)
-
-            except Exception as e:
-                attempt += 1
-                self.reconnect_attempts = attempt
-                print(f"WebSocket client error: {e}; retry {attempt}/{self.max_retries} in {delay}s")
-                GLib.idle_add(
-                    self.status_label.set_text,
-                    f"Reconnecting... ({attempt}/{self.max_retries})",
-                )
-                time.sleep(delay)
-                delay *= 2
-
-        self.use_live = False
-        self.live_client = None
-        return False
-    
-    def start_recording(self):
-        """Start recording"""
-        self.recording = True
-        self.audio_stream = tempfile.TemporaryFile()
-        self.wav_writer = wave.open(self.audio_stream, 'wb')
-        self.wav_writer.setnchannels(1)
-        self.wav_writer.setsampwidth(2)
-        self.wav_writer.setframerate(SAMPLE_RATE)
-        self.total_frames = 0
-        self.start_time = time.time()
-
         # Reset live transcript state and view
         buffer = self.original_text_view.get_buffer()
         buffer.set_text("")
         self.confirmed_text = ""
         self.partial_mark = None
 
-        if self.use_live and self.deepgram:
-            self._schedule_reconnect()
+        if self.use_live and self.deepgram_service:
+            self.deepgram_service.start()
         
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
@@ -839,17 +739,17 @@ class VoiceTranscribeApp:
         if self.audio_stream:
             self.audio_stream.seek(0)
             if self.total_frames > 0:
-                if self.live_client and self.live_client.is_connected():
+                if self.use_live and self.deepgram_service and self.deepgram_service.is_connected():
                     try:
                         logging.debug("Finalizing WebSocket stream")
-                        self.live_client.finalize()
-                        self.live_client.finish()
-                        GLib.idle_add(self._show_transcript, self.confirmed_text.strip())
+                        success = self.deepgram_service.finalize()
+                        if success:
+                            GLib.idle_add(self._show_transcript, self.confirmed_text.strip())
+                        else:
+                            threading.Thread(target=self._process_audio).start()
                     except Exception as e:
                         logging.debug("WebSocket close error: %s", e)
                         threading.Thread(target=self._process_audio).start()
-                    finally:
-                        self.live_client = None
 
                     self.audio_stream.close()
                     self.audio_stream = None
@@ -876,21 +776,13 @@ class VoiceTranscribeApp:
                     self.wav_writer.writeframes(audio_int16.tobytes())
                     self.total_frames += len(audio_int16)
 
-                if self.recording and self.live_client:
-                    try:
-                        chunk = audio_int16.tobytes()
-                        self.live_client.send(chunk)
-                        logging.debug("Sent %d bytes over WebSocket", len(chunk))
-                    except Exception as e:
-                        logging.debug("WebSocket send error: %s", e)
-                        # Disable WebSocket mode and fall back to REST
-
-                        self.live_client = None
+                if self.recording and self.deepgram_service:
+                    chunk = audio_int16.tobytes()
+                    if not self.deepgram_service.send(chunk):
                         GLib.idle_add(
                             self.status_label.set_text,
                             "Connection lost. Reconnecting...",
                         )
-                        self._schedule_reconnect()
         
         # Start continuous audio stream
         with sd.InputStream(
@@ -978,7 +870,7 @@ class VoiceTranscribeApp:
                 "mimetype": "audio/wav"
             }
             
-            response = self.deepgram.listen.rest.v("1").transcribe_file(
+            response = self.deepgram_client.listen.rest.v("1").transcribe_file(
                 source=source,
                 options=options
             )
