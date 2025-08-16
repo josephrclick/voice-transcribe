@@ -98,6 +98,9 @@ class VoiceTranscribeApp:
         self.confirmed_text = ""
         self.partial_mark = None
         self.partial_tag = None
+        self.max_retries = 5
+        self.reconnect_attempts = 0
+        self.reconnecting = False
 
         # Create window
         self.window = Gtk.Window()
@@ -678,6 +681,94 @@ class VoiceTranscribeApp:
             self.start_recording()
         else:
             self.stop_recording()
+
+    def _schedule_reconnect(self) -> None:
+        """Attempt to (re)connect the live client in a background thread."""
+        if self.reconnecting or not self.use_live or not self.deepgram or not self.recording:
+            return
+
+        self.reconnecting = True
+
+        def worker():
+            success = self._connect_live_client()
+            if not success:
+                # Inform user that we will fall back to offline processing
+                GLib.idle_add(
+                    self.status_label.set_text,
+                    "Live connection failed. Using fallback.",
+                )
+            self.reconnecting = False
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _connect_live_client(self) -> bool:
+        """Connect to Deepgram's live transcription with retries."""
+        attempt = 0
+        delay = 1
+        while attempt < self.max_retries and self.recording and self.use_live:
+            try:
+                client = self.deepgram.listen.websocket.v("1")
+
+                def on_transcript(_client, result, **_kwargs):
+                    transcript = ""
+                    is_final = False
+                    try:
+                        if isinstance(result, dict):
+                            transcript = (
+                                result.get("channel", {})
+                                    .get("alternatives", [{}])[0]
+                                    .get("transcript", "")
+                            )
+                            is_final = result.get("is_final", False)
+                        else:
+                            transcript = result.channel.alternatives[0].transcript
+                            is_final = getattr(result, "is_final", False)
+                    except Exception as e:
+                        print(f"Transcript parse error: {e}")
+                        return
+
+                    if transcript:
+                        GLib.idle_add(
+                            self._update_live_transcript,
+                            transcript.strip(),
+                            is_final,
+                        )
+
+                def on_close(_client, *args, **kwargs):
+                    self.live_client = None
+                    self._schedule_reconnect()
+
+                client.on(LiveTranscriptionEvents.Transcript, on_transcript)
+                client.on(LiveTranscriptionEvents.Close, on_close)
+
+                options = LiveOptions(
+                    model="nova-3",
+                    language="en",
+                    punctuate=True,
+                    smart_format=True,
+                )
+                client.start(options)
+                self.live_client = client
+                self.reconnect_attempts = 0
+                GLib.idle_add(
+                    self.status_label.set_text,
+                    "🔴 Recording... Speak now!",
+                )
+                return True
+            except Exception as e:
+                attempt += 1
+                self.reconnect_attempts = attempt
+                print(f"WebSocket client error: {e}; retry {attempt}/{self.max_retries} in {delay}s")
+                GLib.idle_add(
+                    self.status_label.set_text,
+                    f"Reconnecting... ({attempt}/{self.max_retries})",
+                )
+                time.sleep(delay)
+                delay *= 2
+
+        self.use_live = False
+        self.live_client = None
+        return False
     
     def start_recording(self):
         """Start recording"""
@@ -697,52 +788,7 @@ class VoiceTranscribeApp:
         self.partial_mark = None
 
         if self.use_live and self.deepgram:
-            try:
-                # Use Deepgram's WebSocket API for real-time transcription
-                self.live_client = self.deepgram.listen.websocket.v("1")
-
-                def on_transcript(client, result, **kwargs):
-                    """Handle transcription events from Deepgram"""
-                    transcript = ""
-                    is_final = False
-                    try:
-                        if isinstance(result, dict):
-                            transcript = (
-                                result.get("channel", {})
-                                      .get("alternatives", [{}])[0]
-                                      .get("transcript", "")
-                            )
-                            is_final = result.get("is_final", False)
-                        else:
-                            transcript = result.channel.alternatives[0].transcript
-                            is_final = getattr(result, "is_final", False)
-                    except Exception as e:
-                        print(f"Transcript parse error: {e}")
-                        return
-
-                    if transcript:
-                        GLib.idle_add(
-                            self._update_live_transcript,
-                            transcript.strip(),
-                            is_final,
-                        )
-
-                def on_close(client, *args, **kwargs):
-                    self.live_client = None
-
-                self.live_client.on(LiveTranscriptionEvents.Transcript, on_transcript)
-                self.live_client.on(LiveTranscriptionEvents.Close, on_close)
-
-                options = LiveOptions(
-                    model="nova-3",
-                    language="en",
-                    punctuate=True,
-                    smart_format=True,
-                )
-                self.live_client.start(options)
-            except Exception as e:
-                print(f"WebSocket client error: {e}")
-                self.live_client = None
+            self._schedule_reconnect()
         
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
@@ -809,8 +855,12 @@ class VoiceTranscribeApp:
                         self.live_client.send(audio_int16.tobytes())
                     except Exception as e:
                         print(f"WebSocket send error: {e}")
-                        # Disable WebSocket mode and fall back to REST
                         self.live_client = None
+                        GLib.idle_add(
+                            self.status_label.set_text,
+                            "Connection lost. Reconnecting...",
+                        )
+                        self._schedule_reconnect()
         
         # Start continuous audio stream
         with sd.InputStream(
