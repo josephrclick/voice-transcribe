@@ -881,17 +881,24 @@ class VoiceTranscribeApp:
             end_iter = buffer.get_end_iter()
             self.partial_mark = buffer.create_mark(None, end_iter, True)
 
+        # Remove any existing partial text and insert new text at the mark
         start_iter = buffer.get_iter_at_mark(self.partial_mark)
         buffer.delete(start_iter, buffer.get_end_iter())
-        buffer.insert(buffer.get_end_iter(), text)
+        buffer.insert(start_iter, text)
+
+        # Re-fetch iterators after modifying buffer
+        start_iter = buffer.get_iter_at_mark(self.partial_mark)
+        end_iter = buffer.get_end_iter()
 
         if is_final:
-            buffer.remove_tag(self.partial_tag, start_iter, buffer.get_end_iter())
-            buffer.insert(buffer.get_end_iter(), " ")
+            # Finalize the segment and append a space for the next one
+            buffer.remove_tag(self.partial_tag, start_iter, end_iter)
+            buffer.insert(end_iter, " ")
             self.confirmed_text += text + " "
             self.partial_mark = None
         else:
-            buffer.apply_tag(self.partial_tag, start_iter, buffer.get_end_iter())
+            # Highlight partial results until they are finalized
+            buffer.apply_tag(self.partial_tag, start_iter, end_iter)
         return False
 
     def _update_elapsed_time(self):
