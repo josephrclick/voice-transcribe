@@ -9,6 +9,7 @@ import time
 import subprocess
 import json
 import logging
+import argparse
 import numpy as np
 import sounddevice as sd
 import pyperclip
@@ -681,6 +682,7 @@ class VoiceTranscribeApp:
     
     def start_recording(self):
         """Start recording"""
+        logging.debug("Starting recording")
         self.recording = True
         self.audio_stream = tempfile.TemporaryFile()
         self.wav_writer = wave.open(self.audio_stream, 'wb')
@@ -699,12 +701,14 @@ class VoiceTranscribeApp:
         if self.use_live and self.deepgram:
             try:
                 # Use Deepgram's WebSocket API for real-time transcription
+                logging.debug("Initializing Deepgram WebSocket client")
                 self.live_client = self.deepgram.listen.websocket.v("1")
 
                 def on_transcript(client, result, **kwargs):
                     """Handle transcription events from Deepgram"""
                     transcript = ""
                     is_final = False
+                    logging.debug("Raw transcript event: %s", result)
                     try:
                         if isinstance(result, dict):
                             transcript = (
@@ -721,6 +725,11 @@ class VoiceTranscribeApp:
                         return
 
                     if transcript:
+                        logging.debug(
+                            "Received %s transcript: %s",
+                            "final" if is_final else "partial",
+                            transcript,
+                        )
                         GLib.idle_add(
                             self._update_live_transcript,
                             transcript.strip(),
@@ -728,6 +737,7 @@ class VoiceTranscribeApp:
                         )
 
                 def on_close(client, *args, **kwargs):
+                    logging.debug("WebSocket connection closed: %s %s", args, kwargs)
                     self.live_client = None
 
                 self.live_client.on(LiveTranscriptionEvents.Transcript, on_transcript)
@@ -739,6 +749,7 @@ class VoiceTranscribeApp:
                     punctuate=True,
                     smart_format=True,
                 )
+                logging.debug("Starting WebSocket with options: %s", options)
                 self.live_client.start(options)
             except Exception as e:
                 print(f"WebSocket client error: {e}")
@@ -753,9 +764,11 @@ class VoiceTranscribeApp:
         # Clear status labels
         self.clipboard_label.set_text("")
         self.enhancement_label.set_text("")
+        logging.debug("Recording setup complete")
     
     def stop_recording(self):
         """Stop recording and process"""
+        logging.debug("Stopping recording")
         self.recording = False
         self.button.get_style_context().remove_class("recording")
         self.button.set_label("Start Recording")
@@ -771,11 +784,12 @@ class VoiceTranscribeApp:
             if self.total_frames > 0:
                 if self.live_client and self.live_client.is_connected():
                     try:
+                        logging.debug("Finalizing WebSocket stream")
                         self.live_client.finalize()
                         self.live_client.finish()
                         GLib.idle_add(self._show_transcript, self.confirmed_text.strip())
                     except Exception as e:
-                        print(f"WebSocket close error: {e}")
+                        logging.debug("WebSocket close error: %s", e)
                         threading.Thread(target=self._process_audio).start()
                     finally:
                         self.live_client = None
@@ -789,12 +803,13 @@ class VoiceTranscribeApp:
             else:
                 self.status_label.set_text("No audio recorded")
                 GLib.timeout_add_seconds(2, self._reset_status)
+        logging.debug("Recording stopped")
     
     def _monitor_audio(self):
         """Continuously monitor audio input"""
         def audio_callback(indata, frames, time, status):
             if status:
-                print(f"Audio status: {status}")
+                logging.debug("Audio status: %s", status)
 
             if self.recording:
                 # Convert incoming float32 data to 16-bit PCM
@@ -806,9 +821,11 @@ class VoiceTranscribeApp:
 
                 if self.recording and self.live_client:
                     try:
-                        self.live_client.send(audio_int16.tobytes())
+                        chunk = audio_int16.tobytes()
+                        self.live_client.send(chunk)
+                        logging.debug("Sent %d bytes over WebSocket", len(chunk))
                     except Exception as e:
-                        print(f"WebSocket send error: {e}")
+                        logging.debug("WebSocket send error: %s", e)
                         # Disable WebSocket mode and fall back to REST
                         self.live_client = None
         
@@ -1085,11 +1102,20 @@ class VoiceTranscribeApp:
         Gtk.main_quit()
 
 if __name__ == "__main__":
-    # Handle command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] == "toggle":
+    parser = argparse.ArgumentParser(description="Voice Transcribe")
+    parser.add_argument("command", nargs="?", help="Optional command: toggle")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable debug logging"
+    )
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    if args.command == "toggle":
         # Send toggle signal to running instance
         toggle_file = "/tmp/voice_transcribe_toggle"
-        with open(toggle_file, 'w') as f:
+        with open(toggle_file, "w") as f:
             f.write("toggle")
         sys.exit(0)
     
