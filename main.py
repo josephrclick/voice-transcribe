@@ -8,6 +8,7 @@ import tempfile
 import time
 import subprocess
 import json
+import queue
 import logging
 import numpy as np
 import sounddevice as sd
@@ -101,6 +102,11 @@ class VoiceTranscribeApp:
         self.max_retries = 5
         self.reconnect_attempts = 0
         self.reconnecting = False
+
+        # Queue and worker for streaming audio frames
+        self.audio_queue = queue.Queue()
+        self.stream_thread = threading.Thread(target=self._stream_worker, daemon=True)
+        self.stream_thread.start()
 
         # Create window
         self.window = Gtk.Window()
@@ -835,7 +841,24 @@ class VoiceTranscribeApp:
             else:
                 self.status_label.set_text("No audio recorded")
                 GLib.timeout_add_seconds(2, self._reset_status)
-    
+
+    def _stream_worker(self):
+        """Send audio frames from the queue over the live client."""
+        while True:
+            data = self.audio_queue.get()
+            if not self.recording or not self.live_client:
+                continue
+            try:
+                self.live_client.send(data)
+            except Exception as e:
+                print(f"WebSocket send error: {e}")
+                self.live_client = None
+                GLib.idle_add(
+                    self.status_label.set_text,
+                    "Connection lost. Reconnecting...",
+                )
+                self._schedule_reconnect()
+
     def _monitor_audio(self):
         """Continuously monitor audio input"""
         def audio_callback(indata, frames, time, status):
@@ -850,17 +873,8 @@ class VoiceTranscribeApp:
                     self.wav_writer.writeframes(audio_int16.tobytes())
                     self.total_frames += len(audio_int16)
 
-                if self.recording and self.live_client:
-                    try:
-                        self.live_client.send(audio_int16.tobytes())
-                    except Exception as e:
-                        print(f"WebSocket send error: {e}")
-                        self.live_client = None
-                        GLib.idle_add(
-                            self.status_label.set_text,
-                            "Connection lost. Reconnecting...",
-                        )
-                        self._schedule_reconnect()
+                # Queue PCM data for streaming
+                self.audio_queue.put(audio_int16.tobytes())
         
         # Start continuous audio stream
         with sd.InputStream(
