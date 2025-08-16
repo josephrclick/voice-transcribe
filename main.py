@@ -702,10 +702,30 @@ class VoiceTranscribeApp:
                 self.live_client = self.deepgram.listen.websocket.v("1")
 
                 def on_transcript(client, result, **kwargs):
-                    transcript = result.channel.alternatives[0].transcript
+                    """Handle transcription events from Deepgram"""
+                    transcript = ""
+                    is_final = False
+                    try:
+                        if isinstance(result, dict):
+                            transcript = (
+                                result.get("channel", {})
+                                      .get("alternatives", [{}])[0]
+                                      .get("transcript", "")
+                            )
+                            is_final = result.get("is_final", False)
+                        else:
+                            transcript = result.channel.alternatives[0].transcript
+                            is_final = getattr(result, "is_final", False)
+                    except Exception as e:
+                        print(f"Transcript parse error: {e}")
+                        return
+
                     if transcript:
-                        is_final = getattr(result, "is_final", False)
-                        GLib.idle_add(self._update_live_transcript, transcript.strip(), is_final)
+                        GLib.idle_add(
+                            self._update_live_transcript,
+                            transcript.strip(),
+                            is_final,
+                        )
 
                 def on_close(client, *args, **kwargs):
                     self.live_client = None
