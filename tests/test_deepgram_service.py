@@ -44,7 +44,6 @@ def test_send_and_finalize():
     ws.send.assert_called_once_with(chunk)
 
     assert service.finalize() is True
-    ws.finalize.assert_called_once()
     ws.finish.assert_called_once()
     # Simulate the close event Deepgram emits after finalize so the service
     # can clean up its internal WebSocket reference.
@@ -80,6 +79,7 @@ def test_finalize_does_not_reconnect():
     service.start = MagicMock()
 
     assert service.finalize() is True
+    ws.finish.assert_called_once()
     service._handle_close(None)
     service.start.assert_not_called()
     assert service.ws is None

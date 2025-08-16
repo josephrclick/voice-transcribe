@@ -13,8 +13,11 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize OpenAI client if API key is available
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ImportError("OPENAI_API_KEY not set")
+client = openai.OpenAI(api_key=api_key)
 
 # Enhancement style prompts
 ENHANCEMENT_PROMPTS = {

@@ -51,7 +51,7 @@ class DeepgramService:
 
                 options = LiveOptions(
                     model="nova-3",
-                    language="en",
+                    language="en-US",
                     punctuate=True,
                     smart_format=True,
                     encoding="linear16",
@@ -130,13 +130,12 @@ class DeepgramService:
             return False
 
     def finalize(self) -> bool:
-        """Finalize the current stream."""
+        """Finish the current stream and close the WebSocket."""
 
         if not self.ws:
             return False
         self._closing = True
         try:
-            self.ws.finalize()
             self.ws.finish()
             return True
         except Exception:  # pragma: no cover - network errors
