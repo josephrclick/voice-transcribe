@@ -99,6 +99,9 @@ class VoiceTranscribeApp:
         self.confirmed_text = ""
         self.partial_mark = None
         self.partial_tag = None
+        self.max_retries = 5
+        self.reconnect_attempts = 0
+        self.reconnecting = False
 
         # Create window
         self.window = Gtk.Window()
@@ -692,20 +695,37 @@ class VoiceTranscribeApp:
         self.total_frames = 0
         self.start_time = time.time()
 
-        # Reset live transcript state and view
-        buffer = self.original_text_view.get_buffer()
-        buffer.set_text("")
-        self.confirmed_text = ""
-        self.partial_mark = None
+    def _schedule_reconnect(self) -> None:
+        """Attempt to (re)connect the live client in a background thread."""
+        if self.reconnecting or not self.use_live or not self.deepgram or not self.recording:
+            return
 
-        if self.use_live and self.deepgram:
+        self.reconnecting = True
+
+        def worker():
+            success = self._connect_live_client()
+            if not success:
+                # Inform user that we will fall back to offline processing
+                GLib.idle_add(
+                    self.status_label.set_text,
+                    "Live connection failed. Using fallback.",
+                )
+            self.reconnecting = False
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _connect_live_client(self) -> bool:
+        """Connect to Deepgram's live transcription with retries."""
+        attempt = 0
+        delay = 1
+        while attempt < self.max_retries and self.recording and self.use_live:
             try:
+
                 # Use Deepgram's WebSocket API for real-time transcription
                 logging.debug("Initializing Deepgram WebSocket client")
                 self.live_client = self.deepgram.listen.websocket.v("1")
 
-                def on_transcript(client, result, **kwargs):
-                    """Handle transcription events from Deepgram"""
+                def on_transcript(_client, result, **_kwargs):
                     transcript = ""
                     is_final = False
                     logging.debug("Raw transcript event: %s", result)
@@ -713,8 +733,8 @@ class VoiceTranscribeApp:
                         if isinstance(result, dict):
                             transcript = (
                                 result.get("channel", {})
-                                      .get("alternatives", [{}])[0]
-                                      .get("transcript", "")
+                                    .get("alternatives", [{}])[0]
+                                    .get("transcript", "")
                             )
                             is_final = result.get("is_final", False)
                         else:
@@ -736,12 +756,16 @@ class VoiceTranscribeApp:
                             is_final,
                         )
 
+
                 def on_close(client, *args, **kwargs):
                     logging.debug("WebSocket connection closed: %s %s", args, kwargs)
-                    self.live_client = None
 
-                self.live_client.on(LiveTranscriptionEvents.Transcript, on_transcript)
-                self.live_client.on(LiveTranscriptionEvents.Close, on_close)
+                def on_close(_client, *args, **kwargs):
+                    self.live_client = None
+                    self._schedule_reconnect()
+
+                client.on(LiveTranscriptionEvents.Transcript, on_transcript)
+                client.on(LiveTranscriptionEvents.Close, on_close)
 
                 options = LiveOptions(
                     model="nova-3",
@@ -749,11 +773,44 @@ class VoiceTranscribeApp:
                     punctuate=True,
                     smart_format=True,
                 )
+
                 logging.debug("Starting WebSocket with options: %s", options)
                 self.live_client.start(options)
+
             except Exception as e:
-                print(f"WebSocket client error: {e}")
-                self.live_client = None
+                attempt += 1
+                self.reconnect_attempts = attempt
+                print(f"WebSocket client error: {e}; retry {attempt}/{self.max_retries} in {delay}s")
+                GLib.idle_add(
+                    self.status_label.set_text,
+                    f"Reconnecting... ({attempt}/{self.max_retries})",
+                )
+                time.sleep(delay)
+                delay *= 2
+
+        self.use_live = False
+        self.live_client = None
+        return False
+    
+    def start_recording(self):
+        """Start recording"""
+        self.recording = True
+        self.audio_stream = tempfile.TemporaryFile()
+        self.wav_writer = wave.open(self.audio_stream, 'wb')
+        self.wav_writer.setnchannels(1)
+        self.wav_writer.setsampwidth(2)
+        self.wav_writer.setframerate(SAMPLE_RATE)
+        self.total_frames = 0
+        self.start_time = time.time()
+
+        # Reset live transcript state and view
+        buffer = self.original_text_view.get_buffer()
+        buffer.set_text("")
+        self.confirmed_text = ""
+        self.partial_mark = None
+
+        if self.use_live and self.deepgram:
+            self._schedule_reconnect()
         
         self.button.set_label("Stop Recording")
         self.button.get_style_context().add_class("recording")
@@ -827,7 +884,13 @@ class VoiceTranscribeApp:
                     except Exception as e:
                         logging.debug("WebSocket send error: %s", e)
                         # Disable WebSocket mode and fall back to REST
+
                         self.live_client = None
+                        GLib.idle_add(
+                            self.status_label.set_text,
+                            "Connection lost. Reconnecting...",
+                        )
+                        self._schedule_reconnect()
         
         # Start continuous audio stream
         with sd.InputStream(
@@ -848,17 +911,24 @@ class VoiceTranscribeApp:
             end_iter = buffer.get_end_iter()
             self.partial_mark = buffer.create_mark(None, end_iter, True)
 
+        # Remove any existing partial text and insert new text at the mark
         start_iter = buffer.get_iter_at_mark(self.partial_mark)
         buffer.delete(start_iter, buffer.get_end_iter())
-        buffer.insert(buffer.get_end_iter(), text)
+        buffer.insert(start_iter, text)
+
+        # Re-fetch iterators after modifying buffer
+        start_iter = buffer.get_iter_at_mark(self.partial_mark)
+        end_iter = buffer.get_end_iter()
 
         if is_final:
-            buffer.remove_tag(self.partial_tag, start_iter, buffer.get_end_iter())
-            buffer.insert(buffer.get_end_iter(), " ")
+            # Finalize the segment and append a space for the next one
+            buffer.remove_tag(self.partial_tag, start_iter, end_iter)
+            buffer.insert(end_iter, " ")
             self.confirmed_text += text + " "
             self.partial_mark = None
         else:
-            buffer.apply_tag(self.partial_tag, start_iter, buffer.get_end_iter())
+            # Highlight partial results until they are finalized
+            buffer.apply_tag(self.partial_tag, start_iter, end_iter)
         return False
 
     def _update_elapsed_time(self):
