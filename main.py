@@ -126,8 +126,10 @@ class VoiceTranscribeApp:
         
         # Set up keyboard accelerators
         self.setup_accelerators()
-        
-        # Start audio monitoring thread
+
+        # Threading controls for background audio monitoring
+        self.stop_audio = threading.Event()
+        self.input_stream = None
         self.monitor_thread = threading.Thread(target=self._monitor_audio, daemon=True)
         self.monitor_thread.start()
         
@@ -788,12 +790,15 @@ class VoiceTranscribeApp:
         with sd.InputStream(
             samplerate=SAMPLE_RATE,
             channels=1,
-            dtype='float32',
+            dtype="float32",
             callback=audio_callback,
-            blocksize=int(SAMPLE_RATE * CHUNK_DURATION)
-        ):
-            while True:
+            blocksize=int(SAMPLE_RATE * CHUNK_DURATION),
+        ) as stream:
+            self.input_stream = stream
+            while not self.stop_audio.is_set():
                 time.sleep(0.1)
+
+        self.input_stream = None
 
     def _update_live_transcript(self, text, is_final):
         """Update the transcript view with partial and final results."""
@@ -1061,6 +1066,12 @@ class VoiceTranscribeApp:
     def on_destroy(self, widget):
         """Save preferences before closing"""
         self.save_preferences()
+        self.stop_audio.set()
+        if self.input_stream:
+            self.input_stream.close()
+            self.input_stream = None
+        if self.monitor_thread.is_alive():
+            self.monitor_thread.join()
         Gtk.main_quit()
 
 if __name__ == "__main__":
