@@ -27,6 +27,7 @@ class DeepgramService:
         self.on_reconnect = on_reconnect
         self.max_retries = max_retries
         self.ws = None
+        self._closing = False
 
     # ------------------------------------------------------------------
     # Connection management
@@ -53,6 +54,9 @@ class DeepgramService:
                     language="en",
                     punctuate=True,
                     smart_format=True,
+                    encoding="linear16",
+                    sample_rate=16000,
+                    channels=1,
                 )
                 logging.debug("Starting WebSocket with options: %s", options)
                 ws.start(options)
@@ -92,6 +96,9 @@ class DeepgramService:
 
     def _handle_close(self, _client, *_args, **_kwargs) -> None:
         self.ws = None
+        if self._closing:
+            self._closing = False
+            return
         self.start()
 
     # ------------------------------------------------------------------
@@ -115,11 +122,13 @@ class DeepgramService:
 
         if not self.ws:
             return False
+        self._closing = True
         try:
             self.ws.finalize()
             self.ws.finish()
             return True
         except Exception:  # pragma: no cover - network errors
+            self._closing = False
             return False
         finally:
             self.ws = None
