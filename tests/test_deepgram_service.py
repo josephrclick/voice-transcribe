@@ -46,6 +46,9 @@ def test_send_and_finalize():
     assert service.finalize() is True
     ws.finalize.assert_called_once()
     ws.finish.assert_called_once()
+    # Simulate the close event Deepgram emits after finalize so the service
+    # can clean up its internal WebSocket reference.
+    service._handle_close(None)
     assert service.ws is None
 
 
