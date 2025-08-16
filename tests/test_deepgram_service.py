@@ -68,3 +68,17 @@ def test_handle_transcript_dict():
     service._handle_transcript(None, result)
     cb.assert_called_once_with("hi", True)
 
+
+def test_finalize_does_not_reconnect():
+    client = MagicMock()
+    ws = MagicMock()
+    service = DeepgramService(client, on_transcript=dummy_callback)
+    service.ws = ws
+    service.start = MagicMock()
+
+    assert service.finalize() is True
+    service._handle_close(None)
+    service.start.assert_not_called()
+    assert service.ws is None
+    assert service._closing is False
+
