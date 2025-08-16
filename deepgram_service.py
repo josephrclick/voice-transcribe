@@ -95,10 +95,22 @@ class DeepgramService:
             self.on_transcript(transcript.strip(), is_final)
 
     def _handle_close(self, _client, *_args, **_kwargs) -> None:
+        """Handle WebSocket close events."""
+
+        # If we've already cleared the socket reference, this close event has
+        # been processed (or we purposely finalized), so ignore it to avoid
+        # spawning duplicate connections.
+        if self.ws is None:
+            return
+
         self.ws = None
+
         if self._closing:
+            # Expected close after a finalize; do not attempt to reconnect.
             self._closing = False
             return
+
+        # Unexpected close – reconnect automatically.
         self.start()
 
     # ------------------------------------------------------------------
@@ -129,9 +141,10 @@ class DeepgramService:
             return True
         except Exception:  # pragma: no cover - network errors
             self._closing = False
-            return False
-        finally:
+            # Treat as a hard failure; clear socket so future starts create a
+            # fresh connection rather than trying to reuse a closed one.
             self.ws = None
+            return False
 
     def is_connected(self) -> bool:
         """Return True if the WebSocket is currently connected."""
