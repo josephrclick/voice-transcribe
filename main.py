@@ -344,6 +344,19 @@ class VoiceTranscribeApp:
             self.style_combo.connect("changed", self.on_style_changed)
             prompt_controls.pack_start(self.style_combo, False, False, 0)
             
+            # Model selector (disabled for Phase 1)
+            model_label = Gtk.Label(label="Model:")
+            model_label.set_margin_start(10)
+            prompt_controls.pack_start(model_label, False, False, 0)
+            
+            self.model_combo = Gtk.ComboBoxText()
+            # Add current model only (will be expanded in Phase 2)
+            self.model_combo.append_text("GPT-4o Mini")
+            self.model_combo.set_active(0)
+            self.model_combo.set_sensitive(False)  # Disabled in Phase 1
+            self.model_combo.set_tooltip_text("Model selection coming in future update")
+            prompt_controls.pack_start(self.model_combo, False, False, 0)
+            
             header_box.pack_end(prompt_controls, False, False, 0)
         
         main_box.pack_start(header_box, False, False, 0)
@@ -558,10 +571,15 @@ class VoiceTranscribeApp:
             "enhancement_style": self.enhancement_style,
             "history_enabled": self.history_enabled,
             "history_limit": self.history_limit,
+            "selected_model": "gpt-4o-mini",  # Default for Phase 1
+            "model_preferences": {
+                "auto_fallback": True,  # Automatically fall back to default if selected model unavailable
+                "log_token_usage": True,  # Log token usage for cost tracking
+            }
         }
         try:
             with open("config.json", "w") as f:
-                json.dump(prefs, f)
+                json.dump(prefs, f, indent=2)
         except OSError as e:
             logging.error("Failed to save preferences: %s", e)
             print("Unable to save preferences. Please check file permissions.")
@@ -577,10 +595,20 @@ class VoiceTranscribeApp:
                 self.enhancement_style = prefs.get("enhancement_style", "balanced")
                 self.history_enabled = prefs.get("history_enabled", True)
                 self.history_limit = prefs.get("history_limit", 500)
+                self.selected_model = prefs.get("selected_model", "gpt-4o-mini")
+                self.model_preferences = prefs.get("model_preferences", {
+                    "auto_fallback": True,
+                    "log_token_usage": True
+                })
         except (OSError, json.JSONDecodeError) as e:
             logging.error("Failed to load preferences: %s", e)
             print("Unable to load preferences. Defaults will be used.")
             # Use defaults if no config exists or file is invalid
+            self.selected_model = "gpt-4o-mini"
+            self.model_preferences = {
+                "auto_fallback": True,
+                "log_token_usage": True
+            }
             self.prompt_mode_enabled = False
             self.enhancement_style = "balanced"
             self.history_enabled = True
