@@ -83,23 +83,40 @@ Click the big button. Talk. Click again. Paste anywhere. You're welcome.
 Set up the desktop launcher and Ctrl+Q hotkey:
 
 ```bash
-# Create desktop shortcut
+# Automatic installation (recommended)
+bash install-desktop-app.sh
+```
+
+This will:
+
+- Create a desktop launcher with proper icon
+- Install to your application menu
+- Set up Ctrl+Q global hotkey (GNOME)
+- Create command-line shortcut (if ~/.local/bin exists)
+
+**Manual setup** (if automatic install doesn't work):
+
+```bash
+# Create desktop shortcut manually
 cat > ~/.local/share/applications/voice-transcribe.desktop << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Voice Transcribe v3.2
 Comment=Speech to text, but cooler
-Exec=bash -c "cd $HOME/voice-transcribe && source venv/bin/activate && python main.py"
-Icon=audio-input-microphone
+Exec=$(pwd)/voice-transcribe
+Icon=$(pwd)/images/icon.png
 Terminal=false
 Categories=Utility;Audio;
 StartupNotify=true
 EOF
 
-# Set up Ctrl+Q global hotkey (GNOME example)
+# Set up Ctrl+Q global hotkey manually (GNOME)
 # Go to Settings > Keyboard > Custom Shortcuts
-# Command: bash -c "cd $HOME/voice-transcribe && source venv/bin/activate && python main.py toggle"
+# Add new shortcut:
+#   Name: Voice Transcribe Toggle
+#   Command: /path/to/voice-transcribe/voice-transcribe toggle
+#   Shortcut: Ctrl+Q
 ```
 
 ## ✨ Prompt Mode - The Game Changer

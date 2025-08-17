@@ -1,0 +1,39 @@
+# .github/labeler.yml
+frontend:
+  - app/**/*
+  - components/**/*
+  - styles/**/*
+  - "*.css"
+  - "*.tsx"
+
+backend:
+  - api/**/*
+  - lib/services/**/*
+  - lib/db/**/*
+
+python:
+  - "*.py"
+
+database:
+  - prisma/**/*
+  - supabase/**/*
+  - migrations/**/*
+
+ai/ml:
+  - lib/ai/**/*
+  - lib/embeddings/**/*
+  - lib/rag/**/*
+
+documentation:
+  - "*.md"
+  - docs/**/*
+
+dependencies:
+  - package.json
+  - package-lock.json
+  - yarn.lock
+
+tests:
+  - "**/*.test.*"
+  - "**/*.spec.*"
+  - __tests__/**/*

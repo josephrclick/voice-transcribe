@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice Transcribe v3.2
+Comment=Speech to text, but cooler
+Exec=bash -c "cd $HOME/dev/projects/voice-transcribe-dev && source venv/bin/activate && python3 main.py"
+Icon=audio-input-microphone
+Terminal=false
+Categories=Utility;Audio;
+StartupNotify=true
