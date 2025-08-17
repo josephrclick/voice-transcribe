@@ -63,6 +63,9 @@ class DeepgramService:
                 self.ws = ws
                 return True
             except Exception as exc:  # pragma: no cover - network errors
+                # Don't show reconnect message if we're intentionally closing
+                if self._closing:
+                    return False
                 attempt += 1
                 if self.on_reconnect:
                     self.on_reconnect(attempt)

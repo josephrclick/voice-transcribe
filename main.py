@@ -780,11 +780,8 @@ class VoiceTranscribeApp:
 
                 if self.recording and self.deepgram_service:
                     chunk = audio_int16.tobytes()
-                    if not self.deepgram_service.send(chunk):
-                        GLib.idle_add(
-                            self.status_label.set_text,
-                            "Connection lost. Reconnecting...",
-                        )
+                    self.deepgram_service.send(chunk)
+                    # DeepgramService handles reconnection automatically with status updates
         
         # Start continuous audio stream
         with sd.InputStream(

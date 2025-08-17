@@ -5,6 +5,7 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 ## What It Does (And Doesn't Do)
 
 **What it does:**
+
 - 🔴 One big button that says "Start Recording" (revolutionary, I know)
 - ⏱️ Shows you how long you've been rambling
 - 📊 Counts your words so you know if you're being verbose
@@ -16,6 +17,7 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 - 🚀 Actually works, which is more than I can say for my first 17 projects
 
 **What it doesn't do:**
+
 - 🤖 No AI listening to you 24/7 (that's for v4 when I wire up the house)
 - 🎯 No Voice Activity Detection (turns out, buttons are fine)
 - 🔮 No mind reading (yet)
@@ -23,8 +25,9 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 ## Screenshots
 
 ### GUI - Now with side-by-side panels and dual copy buttons!
+
 ![Main Dashboard](./images/ss1-v32.png)
-*Left: Your actual words (with copy button). Right: What you meant to say (with its own copy button).*
+_Left: Your actual words (with copy button). Right: What you meant to say (with its own copy button)._
 
 ## The Stack
 
@@ -40,9 +43,11 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 git clone https://github.com/josephrclick/voice-transcribe.git
 cd voice-transcribe
 
-# Install system dependencies first (required for PyGObject)
+# Install system dependencies first (required for PyGObject and audio)
 sudo apt update
 sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 libgirepository-2.0-dev
+sudo apt install libcairo2-dev python3-dev pkg-config  # Build dependencies for PyGObject
+sudo apt install portaudio19-dev                       # Audio library for sounddevice
 
 # System deps for clipboard greatness
 sudo apt install xclip xdotool          # X11 users
@@ -66,6 +71,7 @@ echo "OPENAI_API_KEY=sk-your_key_here" >> .env
 ## Usage
 
 ### The Simple Way
+
 ```bash
 python main.py
 ```
@@ -73,6 +79,7 @@ python main.py
 Click the big button. Talk. Click again. Paste anywhere. You're welcome.
 
 ### The Pro Way
+
 Set up the desktop launcher and Ctrl+Q hotkey:
 
 ```bash
@@ -100,9 +107,11 @@ EOF
 Ever record a voice note and realize you sound like you're ordering coffee while solving world peace? Prompt Mode fixes that.
 
 ### What is Prompt Mode?
+
 It's like having a tiny prompt engineer in your computer that takes your stream-of-consciousness rambling and turns it into the kind of prompt that makes LLMs go "Now THIS I can work with!"
 
 ### How it Works
+
 1. **Enable Prompt Mode** - Check the box or hit Ctrl+Shift+Q
 2. **Choose your style:**
    - **Concise**: For when you need to get to the point
@@ -114,9 +123,11 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
 6. **Copy what you need** - Separate copy buttons for original and enhanced versions
 
 ### Side-by-Side View
+
 See your original transcript next to the enhanced version. It's like watching your thoughts get a makeover.
 
 ### Example Transformations
+
 ```
 Original: "can you help me fix this react thing where it keeps rerendering constantly and I don't know why"
 Enhanced: "Debug React component excessive rerendering issue. The component rerenders continuously without apparent state changes. Please analyze potential causes and provide solutions."
@@ -140,47 +151,58 @@ Enhanced: "Create a Python script with these requirements:
 ## Features That Actually Exist
 
 ### 🎨 Dark Theme
+
 Because your eyes matter. Carefully crafted with Catppuccin-inspired colors that say "I code at night and I'm proud of it."
 
 ### 📊 Real-time Stats
+
 Watch the seconds tick by and words accumulate. It's like a fitness tracker, but for your mouth.
 
 ### 🔄 Action Buttons
+
 - **Copy (Original)**: Get your raw, unfiltered thoughts
 - **Copy (Enhanced)**: Get the polished version
 - **Clear All**: For when you need a fresh start
 
 ### 🎯 Auto-paste
+
 On X11, it'll even paste for you via xdotool. On Wayland, install `wtype` for automatic pasting (otherwise use Ctrl+V).
 
 ### 🔝 Always On Top
+
 Stays visible because out of sight, out of mind, and we can't have that.
 
 ### ⌨️ Keyboard Shortcuts
+
 - **Ctrl+Q**: Toggle recording (works globally with desktop setup)
 - **Ctrl+Shift+Q**: Toggle Prompt Mode instantly
 
 ## Troubleshooting
 
 **"It's not recording!"**
+
 - Is your mic plugged in? (I'm not judging)
 - `pactl list short sources` - pick a working one
 - `pactl set-default-source <that_working_one>`
 
 **"Where's my transcript?"**
+
 - Did you actually say something?
 - Check your Deepgram API key
 - Is the internet on?
 
 **"Auto-paste isn't working!"**
+
 - Using Wayland? Install `wtype` for auto-paste or use Ctrl+V.
 - On X11? Make sure xdotool is installed and you clicked where you want to paste
 
 **"I see GTK warnings!"**
+
 - They're like participation trophies - everyone gets them, nobody wants them
 - `export GTK_THEME=Adwaita` if they really bug you
 
 **"Prompt Mode isn't working!"**
+
 - Did you add your OpenAI API key to .env?
 - Check if you have OpenAI credits
 - If enhancement fails, you still get the original transcript
@@ -214,6 +236,6 @@ Do whatever you want with it. If it breaks, you get to keep both pieces.
 
 ---
 
-*Built with ❤️ and mild frustration by someone who just wanted to dictate text without opening Google Docs*
+_Built with ❤️ and mild frustration by someone who just wanted to dictate text without opening Google Docs_
 
-*"Simplicity is the ultimate sophistication" - Leonardo da Vinci (who probably would've loved voice transcription)*
+_"Simplicity is the ultimate sophistication" - Leonardo da Vinci (who probably would've loved voice transcription)_
