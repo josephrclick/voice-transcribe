@@ -1,5 +1,7 @@
 # Voice Transcribe v3.2 🎤
 
+[![CI Pipeline](https://github.com/josephrclick/voice-transcribe/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/josephrclick/voice-transcribe/actions/workflows/ci.yml)
+
 A delightfully simple voice-to-text tool for Linux that just works™. Click button, speak thoughts, get text. Now with ✨ Prompt Mode ✨ for AI-enhanced transcripts!
 
 ## What It Does (And Doesn't Do)
@@ -11,7 +13,7 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 - 📊 Counts your words so you know if you're being verbose
 - 📋 Auto-copies to clipboard because Ctrl+C is so 2023
 - 🎨 Dark theme that won't burn your retinas at 3am
-- ⌨️ Keyboard shortcuts: Ctrl+Q (record), Ctrl+Shift+Q (Prompt Mode)
+- ⌨️ Keyboard shortcuts: Ctrl+Q (record), Ctrl+Shift+Q (Prompt Mode), Ctrl+D (Dashboard)
 - ✨ **NEW: Prompt Mode** - Transforms your rambling into perfect LLM prompts
 - 🔄 **NEW: Dual copy buttons** - Copy original or enhanced separately
 - 🚀 Actually works, which is more than I can say for my first 17 projects
@@ -33,7 +35,7 @@ _Left: Your actual words (with copy button). Right: What you meant to say (with 
 
 - **GTK 3** - Because native Linux apps deserve love
 - **Deepgram Nova-3** - The speech recognition that actually understands mumbling
-- **OpenAI GPT-4.1 Family** - The prompt whisperers (GPT-4.1-nano/mini/standard)
+- **OpenAI GPT-4.1 Family & GPT-5** - From economy to flagship tier models
 - **Python** - The language of "let's just ship it"
 
 ## Installation
@@ -138,19 +140,20 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
 
 ## Available Models
 
-| Model        | Context Window | Max Output | Features        | Best For         |
-| ------------ | -------------- | ---------- | --------------- | ---------------- |
-| GPT-4o Mini  | 128K           | 4,096      | JSON            | Quick edits      |
-| GPT-4.1 Nano | 1M             | 2,048      | JSON, Verbosity | High volume      |
-| GPT-4.1 Mini | 1M             | 4,096      | JSON, Verbosity | Longer texts     |
-| GPT-4.1      | 1M             | 8,192      | JSON, Verbosity | Professional     |
-| GPT-5 Nano   | 400K           | 128,000    | All features    | Fast processing  |
-| GPT-5 Mini   | 400K           | 128,000    | All features    | Creative writing |
-| GPT-5        | 400K           | 128,000    | All features    | Complex tasks    |
+| Model        | Context Window | Max Output | Features        | Tier     | Best For         |
+| ------------ | -------------- | ---------- | --------------- | -------- | ---------------- |
+| GPT-4o Mini  | 128K           | 4,096      | JSON            | Standard | Quick edits      |
+| GPT-4.1 Nano | 1M             | 2,048      | JSON, Verbosity | Economy  | High volume      |
+| GPT-4.1 Mini | 1M             | 4,096      | JSON, Verbosity | Economy  | Longer texts     |
+| GPT-4.1      | 1M             | 8,192      | JSON, Verbosity | Standard | Professional     |
+| GPT-5 Nano   | 400K           | 128,000    | All features    | Economy  | Fast processing  |
+| GPT-5 Mini   | 400K           | 128,000    | All features    | Standard | Creative writing |
+| GPT-5        | 400K           | 128,000    | All features    | Flagship | Complex tasks    |
 
-- Model selection persists between sessions
-- Automatic fallback if selected model unavailable
-- Access detailed specifications and performance metrics in the dashboard
+- **Flagship tier models** offer advanced reasoning capabilities
+- **Context windows**: 128K = ~96K words, 400K = ~300K words, 1M = ~750K words
+- **All models** include automatic fallback chains for reliability
+- Model selection persists between sessions with intelligent fallback handling
 
 4. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
 5. **Watch the magic** - See a preview while it enhances: "Enhancing: um, so like, I need a function that..."
@@ -160,6 +163,18 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
 ### Side-by-Side View
 
 See your original transcript next to the enhanced version. It's like watching your thoughts get a makeover.
+
+### 📊 Performance Dashboard
+
+Access comprehensive model information and usage statistics with **Ctrl+D**:
+
+- **Model Specifications**: Detailed context windows, output limits, and feature support matrix
+- **Performance Metrics**: Real-time speed comparisons and latency estimates
+- **Usage Statistics**: Session costs and model usage tracking across all tiers
+- **Tier Classifications**: Economy, Standard, and Flagship model comparisons
+- **Context Explanations**: Human-readable descriptions of model capabilities
+
+The dashboard helps you choose the optimal model for specific use cases and understand the trade-offs between speed, capability, and cost.
 
 ### Example Transformations
 
@@ -211,6 +226,7 @@ Stays visible because out of sight, out of mind, and we can't have that.
 
 - **Ctrl+Q**: Toggle recording (works globally with desktop setup)
 - **Ctrl+Shift+Q**: Toggle Prompt Mode instantly
+- **Ctrl+D**: Open Performance Dashboard with comprehensive model information
 
 ## Troubleshooting
 

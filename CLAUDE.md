@@ -80,6 +80,9 @@ source venv/bin/activate && python main.py
 
 # Toggle mode for keyboard shortcuts
 ./voice-transcribe toggle
+
+# Access performance dashboard
+# Ctrl+D # Opens model specifications and usage statistics
 ```
 
 ### Testing
@@ -92,6 +95,7 @@ python -m pytest tests/test_deepgram_service.py
 # 1. Record 3s audio → verify transcript + word count
 # 2. Toggle Prompt Mode → verify enhancement or fallback
 # 3. Test both copy buttons + auto-paste
+# 4. Test Ctrl+D dashboard → verify model specifications display
 ```
 
 ### Configuration
@@ -99,7 +103,7 @@ python -m pytest tests/test_deepgram_service.py
 - **API Keys**: Add to `.env` (never commit)
   ```
   DEEPGRAM_API_KEY=your_key_here
-  OPENAI_API_KEY=sk-your_key_here  # Optional for Prompt Mode
+  OPENAI_API_KEY=sk-your_key_here  # Optional for Prompt Mode + Dashboard
   ```
 - **Preferences**: Auto-saved to `config.json` (don't edit manually)
 
