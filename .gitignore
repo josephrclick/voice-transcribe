@@ -1,6 +1,8 @@
-# Environment variables
+# Environment
 .env
 .env.local
+config.json
+.archive/
 
 # Python
 __pycache__/
@@ -26,6 +28,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
 
 # Audio files (testing)
 *.wav
@@ -45,11 +48,9 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 
 # Temporary files
 tmp/
 temp/
 *.tmp
-config.json
-.archive/
-logs/

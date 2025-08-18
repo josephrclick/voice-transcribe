@@ -77,7 +77,7 @@ COLORS = {
 }
 
 # Application
-APP_TITLE = "Voice Transcribe v3.2"
+APP_TITLE = "Voice Transcribe v3.3"
 
 class VoiceTranscribeApp:
     def __init__(self):
