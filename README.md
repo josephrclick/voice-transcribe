@@ -1,6 +1,11 @@
-# Voice Transcribe v3.2 🎤
+# Voice Transcribe v3.3 🎤
 
 [![CI Pipeline](https://github.com/josephrclick/voice-transcribe/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/josephrclick/voice-transcribe/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![GTK](https://img.shields.io/badge/GTK-3.0-green.svg)](https://gtk.org)
+[![Deepgram](https://img.shields.io/badge/Deepgram-Nova--3-purple.svg)](https://deepgram.com)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4.1%20%7C%20GPT--5-orange.svg)](https://openai.com)
+[![Linux](https://img.shields.io/badge/Platform-Linux-yellow.svg)](https://linux.org)
 
 A delightfully simple voice-to-text tool for Linux that just works™. Click button, speak thoughts, get text. Now with ✨ Prompt Mode ✨ for AI-enhanced transcripts!
 
@@ -11,7 +16,7 @@ A delightfully simple voice-to-text tool for Linux that just works™. Click but
 - 🔴 One big button that says "Start Recording" (revolutionary, I know)
 - ⏱️ Shows you how long you've been rambling
 - 📊 Counts your words so you know if you're being verbose
-- 📋 Auto-copies to clipboard because Ctrl+C is so 2023
+- 📋 Seamlessly copies to clipboard with modern efficiency
 - 🎨 Dark theme that won't burn your retinas at 3am
 - ⌨️ Keyboard shortcuts: Ctrl+Q (record), Ctrl+Shift+Q (Prompt Mode), Ctrl+D (Dashboard)
 - ✨ **NEW: Prompt Mode** - Transforms your rambling into perfect LLM prompts
@@ -104,7 +109,7 @@ cat > ~/.local/share/applications/voice-transcribe.desktop << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Voice Transcribe v3.2
+Name=Voice Transcribe v3.3
 Comment=Speech to text, but cooler
 Exec=$(pwd)/voice-transcribe
 Icon=$(pwd)/images/icon.png
@@ -136,25 +141,7 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
    - **Concise**: For when you need to get to the point
    - **Balanced**: The Goldilocks zone of prompts
    - **Detailed**: For when you need the LLM to really get it
-3. **Select your AI model** (NEW!):
-
-## Available Models
-
-| Model        | Context Window | Max Output | Features        | Tier     | Best For         |
-| ------------ | -------------- | ---------- | --------------- | -------- | ---------------- |
-| GPT-4o Mini  | 128K           | 4,096      | JSON            | Standard | Quick edits      |
-| GPT-4.1 Nano | 1M             | 2,048      | JSON, Verbosity | Economy  | High volume      |
-| GPT-4.1 Mini | 1M             | 4,096      | JSON, Verbosity | Economy  | Longer texts     |
-| GPT-4.1      | 1M             | 8,192      | JSON, Verbosity | Standard | Professional     |
-| GPT-5 Nano   | 400K           | 128,000    | All features    | Economy  | Fast processing  |
-| GPT-5 Mini   | 400K           | 128,000    | All features    | Standard | Creative writing |
-| GPT-5        | 400K           | 128,000    | All features    | Flagship | Complex tasks    |
-
-- **Flagship tier models** offer advanced reasoning capabilities
-- **Context windows**: 128K = ~96K words, 400K = ~300K words, 1M = ~750K words
-- **All models** include automatic fallback chains for reliability
-- Model selection persists between sessions with intelligent fallback handling
-
+3. **Select your AI model** - From economy to flagship tiers with intelligent fallbacks
 4. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
 5. **Watch the magic** - See a preview while it enhances: "Enhancing: um, so like, I need a function that..."
 6. **Get enhanced** - "Create a Python function that reads CSV files, handles encoding issues, and provides error handling with clear documentation"
@@ -174,7 +161,7 @@ Access comprehensive model information and usage statistics with **Ctrl+D**:
 - **Tier Classifications**: Economy, Standard, and Flagship model comparisons
 - **Context Explanations**: Human-readable descriptions of model capabilities
 
-The dashboard helps you choose the optimal model for specific use cases and understand the trade-offs between speed, capability, and cost.
+The dashboard serves as an excellent learning tool for understanding AI model capabilities and trade-offs. Compare different models' performance characteristics, experiment with various tiers, and gain hands-on experience with cost optimization strategies - perfect for understanding modern AI integration in production applications.
 
 ### Example Transformations
 
@@ -190,13 +177,14 @@ Enhanced: "Create a Python script with these requirements:
 - Include error handling for invalid JSON"
 ```
 
-## Why v3.2?
+## Why v3.3?
 
 - v1: "Hey, this could work!" (Narrator: it didn't)
 - v2: "Let's add ALL the features!" (Spoiler: too many features)
 - v3: "What if we just... made it work?" (Revolutionary concept)
 - v3.1: "What if your rambling made sense?" (Game changer)
 - v3.2: "What if we made it even smoother?" (Quick wins ftw)
+- v3.3: "More models = more learning!" (Because variety is the spice of AI)
 
 ## Features That Actually Exist
 
@@ -228,36 +216,6 @@ Stays visible because out of sight, out of mind, and we can't have that.
 - **Ctrl+Shift+Q**: Toggle Prompt Mode instantly
 - **Ctrl+D**: Open Performance Dashboard with comprehensive model information
 
-## Troubleshooting
-
-**"It's not recording!"**
-
-- Is your mic plugged in? (I'm not judging)
-- `pactl list short sources` - pick a working one
-- `pactl set-default-source <that_working_one>`
-
-**"Where's my transcript?"**
-
-- Did you actually say something?
-- Check your Deepgram API key
-- Is the internet on?
-
-**"Auto-paste isn't working!"**
-
-- Using Wayland? Install `wtype` for auto-paste or use Ctrl+V.
-- On X11? Make sure xdotool is installed and you clicked where you want to paste
-
-**"I see GTK warnings!"**
-
-- They're like participation trophies - everyone gets them, nobody wants them
-- `export GTK_THEME=Adwaita` if they really bug you
-
-**"Prompt Mode isn't working!"**
-
-- Did you add your OpenAI API key to .env?
-- Check if you have OpenAI credits
-- If enhancement fails, you still get the original transcript
-
 ## What's NOT Coming Soon
 
 - 🎯 VAD (Voice Activity Detection) - Buttons are fine, actually
@@ -266,10 +224,9 @@ Stays visible because out of sight, out of mind, and we can't have that.
 
 ## What Might Come Eventually
 
-- 📝 History of your ramblings (and their enhanced versions)
-- 🌍 More language support
-- 🤖 More AI models (GPT-5 ready when it drops!)
-- 📊 A/B testing dashboard to compare model performance
+- ~~📝 History of your ramblings (and their enhanced versions)~~ ✅ Implemented
+- ~~🤖 More AI models (GPT-5 ready when it drops!)~~ ✅ Implemented
+- ~~📊 A/B testing dashboard to compare model performance~~ ✅ Implemented
 - 🎨 Theme customization (for the 3 people who don't like dark mode)
 - 🤖 Direct LLM integration (skip the copy/paste dance)
 - 🎯 Smart routing to different LLMs based on prompt type
