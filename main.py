@@ -32,6 +32,14 @@ except ImportError:
     print("Warning: enhance.py not found. Prompt Mode will be disabled.")
     ENHANCEMENT_AVAILABLE = False
 
+# Import model configuration
+try:
+    from model_config import model_registry
+    MODEL_CONFIG_AVAILABLE = True
+except ImportError:
+    print("Warning: model_config.py not found. Model selection will be disabled.")
+    MODEL_CONFIG_AVAILABLE = False
+
 logging.basicConfig(level=logging.INFO)
     
 # Load environment variables
@@ -83,6 +91,9 @@ class VoiceTranscribeApp:
         # History settings
         self.history_enabled = True
         self.history_limit = 500
+        
+        # Initialize config dictionary
+        self.config = {}
 
         # Load saved preferences
         self.load_preferences()
@@ -344,17 +355,46 @@ class VoiceTranscribeApp:
             self.style_combo.connect("changed", self.on_style_changed)
             prompt_controls.pack_start(self.style_combo, False, False, 0)
             
-            # Model selector (disabled for Phase 1)
+            # Model selector (enabled for Phase 2)
             model_label = Gtk.Label(label="Model:")
             model_label.set_margin_start(10)
             prompt_controls.pack_start(model_label, False, False, 0)
             
             self.model_combo = Gtk.ComboBoxText()
-            # Add current model only (will be expanded in Phase 2)
-            self.model_combo.append_text("GPT-4o Mini")
-            self.model_combo.set_active(0)
-            self.model_combo.set_sensitive(False)  # Disabled in Phase 1
-            self.model_combo.set_tooltip_text("Model selection coming in future update")
+            
+            # Populate available models if model config is available
+            if MODEL_CONFIG_AVAILABLE:
+                available_models = model_registry.get_available_models()
+                for i, model in enumerate(available_models):
+                    # Display model name with cost information
+                    cost_per_1k = model.cost_per_1k_input * 1000  # Convert to per 1K tokens
+                    display_text = f"{model.display_name} (${cost_per_1k:.2f}/1K)"
+                    self.model_combo.append(model.model_name, display_text)
+                    
+                # Load saved preference or default to GPT-4o-mini
+                saved_model = self.config.get("selected_model", "gpt-4o-mini")
+                
+                # Set active model if it exists in the combo
+                model_found = False
+                for i in range(len(available_models)):
+                    if available_models[i].model_name == saved_model:
+                        self.model_combo.set_active(i)
+                        model_found = True
+                        break
+                
+                if not model_found and len(available_models) > 0:
+                    self.model_combo.set_active(0)
+                    
+                self.model_combo.set_sensitive(True)  # Enable for Phase 2
+                self.model_combo.connect("changed", self.on_model_changed)
+                self.model_combo.set_tooltip_text("Select AI model for enhancement")
+            else:
+                # Fallback if model config not available
+                self.model_combo.append_text("GPT-4o Mini")
+                self.model_combo.set_active(0)
+                self.model_combo.set_sensitive(False)
+                self.model_combo.set_tooltip_text("Model configuration not available")
+            
             prompt_controls.pack_start(self.model_combo, False, False, 0)
             
             header_box.pack_end(prompt_controls, False, False, 0)
@@ -564,22 +604,87 @@ class VoiceTranscribeApp:
         self.enhancement_style = styles[widget.get_active()]
         self.save_preferences()
     
-    def save_preferences(self):
-        """Save user preferences to config file"""
-        prefs = {
-            "prompt_mode_enabled": self.prompt_mode_enabled,
-            "enhancement_style": self.enhancement_style,
-            "history_enabled": self.history_enabled,
-            "history_limit": self.history_limit,
-            "selected_model": "gpt-4o-mini",  # Default for Phase 1
-            "model_preferences": {
-                "auto_fallback": True,  # Automatically fall back to default if selected model unavailable
-                "log_token_usage": True,  # Log token usage for cost tracking
+    def on_model_changed(self, widget):
+        """Handle model selection change"""
+        if MODEL_CONFIG_AVAILABLE:
+            # Get the selected model ID
+            model_id = widget.get_active_id()
+            if model_id:
+                self.selected_model = model_id
+                self.config["selected_model"] = model_id
+                self.save_config()
+                
+                # Log for A/B testing
+                print(f"Model switched to: {model_id}")
+                self.track_model_usage(model_id)
+                
+                # Update cost display if applicable
+                self.update_cost_display()
+    
+    def track_model_usage(self, model_key):
+        """Track model usage for A/B testing"""
+        usage_stats = self.config.get("model_usage_stats", {})
+        
+        # Initialize if needed
+        if model_key not in usage_stats:
+            usage_stats[model_key] = {
+                "count": 0,
+                "total_tokens": 0,
+                "avg_latency": 0,
+                "user_rating": []
             }
-        }
+        
+        usage_stats[model_key]["count"] += 1
+        self.config["model_usage_stats"] = usage_stats
+        self.save_config()
+    
+    def update_cost_display(self):
+        """Show estimated cost savings"""
+        if not MODEL_CONFIG_AVAILABLE:
+            return
+            
+        current_model = self.config.get("selected_model", "gpt-4o-mini")
+        tokens_used = self.config.get("total_tokens_month", 0)
+        
+        model_config = model_registry.get(current_model)
+        if model_config:
+            current_cost = (tokens_used / 1000) * model_config.cost_per_1k_input
+            
+            # Show savings if using GPT-4.1
+            if current_model == "gpt-4.1-mini":
+                old_cost = (tokens_used / 1000) * 0.00015  # GPT-4o-mini cost
+                savings = old_cost - current_cost
+                
+                # Update a label if we have one (we'll add this later if needed)
+                if hasattr(self, 'cost_label'):
+                    self.cost_label.set_text(f"Monthly savings: ${savings:.2f}")
+    
+    def save_config(self):
+        """Save config dictionary to file"""
         try:
             with open("config.json", "w") as f:
-                json.dump(prefs, f, indent=2)
+                json.dump(self.config, f, indent=2)
+        except OSError as e:
+            logging.error("Failed to save config: %s", e)
+            print("Unable to save config. Please check file permissions.")
+    
+    def save_preferences(self):
+        """Save user preferences to config file"""
+        # Update config dictionary with current values
+        self.config["prompt_mode_enabled"] = self.prompt_mode_enabled
+        self.config["enhancement_style"] = self.enhancement_style
+        self.config["history_enabled"] = self.history_enabled
+        self.config["history_limit"] = self.history_limit
+        self.config["selected_model"] = getattr(self, "selected_model", "gpt-4o-mini")
+        self.config["model_preferences"] = getattr(self, "model_preferences", {
+            "auto_fallback": True,
+            "log_token_usage": True
+        })
+        
+        # Save the config
+        try:
+            with open("config.json", "w") as f:
+                json.dump(self.config, f, indent=2)
         except OSError as e:
             logging.error("Failed to save preferences: %s", e)
             print("Unable to save preferences. Please check file permissions.")
@@ -591,6 +696,9 @@ class VoiceTranscribeApp:
         try:
             with open("config.json", "r") as f:
                 prefs = json.load(f)
+                # Store the entire config for later use
+                self.config = prefs
+                # Also set individual attributes for backward compatibility
                 self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
                 self.enhancement_style = prefs.get("enhancement_style", "balanced")
                 self.history_enabled = prefs.get("history_enabled", True)
@@ -613,6 +721,15 @@ class VoiceTranscribeApp:
             self.enhancement_style = "balanced"
             self.history_enabled = True
             self.history_limit = 500
+            # Also set default config dictionary
+            self.config = {
+                "selected_model": self.selected_model,
+                "model_preferences": self.model_preferences,
+                "prompt_mode_enabled": self.prompt_mode_enabled,
+                "enhancement_style": self.enhancement_style,
+                "history_enabled": self.history_enabled,
+                "history_limit": self.history_limit
+            }
 
     def load_history(self) -> List[Dict[str, Optional[str]]]:
         """Load history entries from JSONL file"""
@@ -962,7 +1079,9 @@ class VoiceTranscribeApp:
     
     def _enhance_transcript(self, transcript):
         """Enhance transcript in background"""
-        enhanced, error = enhance_prompt(transcript, self.enhancement_style)
+        # Get the selected model if available
+        model_key = self.config.get("selected_model", "gpt-4o-mini") if MODEL_CONFIG_AVAILABLE else None
+        enhanced, error = enhance_prompt(transcript, self.enhancement_style, model_key=model_key)
         
         if enhanced:
             self.enhanced_text = enhanced

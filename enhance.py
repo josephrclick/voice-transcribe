@@ -53,14 +53,15 @@ def estimate_tokens(text: str) -> int:
     """Rough estimate of token count (1 token ≈ 4 characters)"""
     return len(text) // 4
 
-def enhance_prompt(transcript: str, style: str = "balanced", model_name: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional[str] = None, model_name: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Enhance a voice transcript into an optimized LLM prompt
     
     Args:
         transcript: Raw transcript from Deepgram
         style: Enhancement style ('concise', 'balanced', 'detailed')
-        model_name: Specific model to use (defaults to current default model)
+        model_key: Model key/ID from UI selection (preferred over model_name)
+        model_name: Specific model to use (deprecated, use model_key)
     
     Returns:
         Tuple of (enhanced_prompt, error_message)
@@ -79,16 +80,24 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_name: Optiona
     if estimate_tokens(transcript) > 3000:
         return None, "Transcript too long for enhancement"
     
-    # Get model configuration
-    if model_name is None:
-        model_config = model_registry.get_default_model()
-        model_name = model_config.model_name
-    else:
+    # Get model configuration (prefer model_key over model_name)
+    if model_key:
+        model_config = model_registry.get(model_key)
+        if not model_config:
+            logger.warning(f"Model {model_key} not found, using default")
+            model_config = model_registry.get_default_model()
+            model_name = model_config.model_name
+        else:
+            model_name = model_key
+    elif model_name:
         model_config = model_registry.get(model_name)
         if not model_config:
             logger.warning(f"Model {model_name} not found, using default")
             model_config = model_registry.get_default_model()
             model_name = model_config.model_name
+    else:
+        model_config = model_registry.get_default_model()
+        model_name = model_config.model_name
     
     # Check if model is available
     if not model_config.is_available():
@@ -103,13 +112,26 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_name: Optiona
             {"role": "user", "content": transcript}
         ]
         
+        # Prepare additional parameters
+        call_params = {
+            "model_name": model_name,
+            "messages": messages,
+            "max_tokens": 1000,  # Will be mapped to correct parameter
+            "temperature": 0.3  # Will be constrained to model limits
+        }
+        
+        # Add verbosity parameter if model supports it (GPT-4.1 feature)
+        if model_config.supports_verbosity:
+            # Map enhancement style to verbosity level
+            verbosity_map = {
+                "concise": "low",
+                "balanced": "medium",
+                "detailed": "high"
+            }
+            call_params["verbosity"] = verbosity_map.get(style, "medium")
+        
         # Use model adapter for API call with automatic fallback
-        response = model_adapter.call_with_fallback(
-            model_name=model_name,
-            messages=messages,
-            max_tokens=1000,  # Will be mapped to correct parameter
-            temperature=0.3  # Will be constrained to model limits
-        )
+        response = model_adapter.call_with_fallback(**call_params)
         
         if not response:
             return None, "Enhancement failed - API call returned no response"
