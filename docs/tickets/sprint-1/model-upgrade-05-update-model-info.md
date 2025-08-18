@@ -21,7 +21,7 @@ Update the Performance Dashboard with accurate, current model specifications inc
 
 ## Target State
 
-- Accurate context windows (128K → 2M range)
+- Accurate context windows (128K → 1M range per official docs)
 - Comprehensive capability matrix
 - Performance benchmarks visible
 - Clear use case recommendations
@@ -31,11 +31,11 @@ Update the Performance Dashboard with accurate, current model specifications inc
 
 ### 1. Update Model Registry Context Windows (`model_config.py`)
 
-Ensure all models have accurate specifications:
+Ensure all models have accurate specifications based on official OpenAI documentation:
 
 ```python
 def _initialize_default_models(self):
-    """Initialize with accurate model specifications"""
+    """Initialize with accurate model specifications per OpenAI docs"""
 
     # GPT-4o-mini - Current baseline
     self.register(ModelConfig(
@@ -43,7 +43,7 @@ def _initialize_default_models(self):
         display_name="GPT-4o Mini",
         max_tokens_param="max_tokens",
         max_tokens_value=150,
-        context_window=128000,  # 128K tokens
+        context_window=128000,  # 128K tokens (confirmed)
         temperature_min=0.0,
         temperature_max=2.0,
         supports_json_mode=True,
@@ -53,11 +53,11 @@ def _initialize_default_models(self):
         tier="standard"
     ))
 
-    # GPT-4.1 Series - Enhanced context
+    # GPT-4.1 Series - Up to 1M context per OpenAI docs
     self.register(ModelConfig(
         model_name="gpt-4.1-nano",
         display_name="GPT-4.1 Nano",
-        context_window=128000,  # 128K tokens (same as 4o-mini)
+        context_window=1000000,  # 1M tokens (per OpenAI)
         output_token_limit=2048,
         supports_verbosity=True,
         tier="economy"
@@ -66,7 +66,7 @@ def _initialize_default_models(self):
     self.register(ModelConfig(
         model_name="gpt-4.1-mini",
         display_name="GPT-4.1 Mini",
-        context_window=256000,  # 256K tokens (2x)
+        context_window=1000000,  # 1M tokens (per OpenAI)
         output_token_limit=4096,
         supports_verbosity=True,
         tier="economy"
@@ -75,18 +75,18 @@ def _initialize_default_models(self):
     self.register(ModelConfig(
         model_name="gpt-4.1",
         display_name="GPT-4.1",
-        context_window=512000,  # 512K tokens (4x)
+        context_window=1000000,  # 1M tokens (per OpenAI)
         output_token_limit=8192,
         supports_verbosity=True,
         tier="standard"
     ))
 
-    # GPT-5 Series - Massive context
+    # GPT-5 Series - 400K context per OpenAI docs
     self.register(ModelConfig(
         model_name="gpt-5-nano",
         display_name="GPT-5 Nano",
-        context_window=512000,   # 512K tokens (4x)
-        output_token_limit=4096,
+        context_window=400000,   # 400K tokens (per OpenAI)
+        output_token_limit=128000,  # 128K output (per OpenAI)
         temperature_constrained=True,  # Fixed at 1.0
         supports_verbosity=True,
         supports_reasoning_effort=True,
@@ -96,8 +96,8 @@ def _initialize_default_models(self):
     self.register(ModelConfig(
         model_name="gpt-5-mini",
         display_name="GPT-5 Mini",
-        context_window=1024000,  # 1M tokens (8x)
-        output_token_limit=8192,
+        context_window=400000,  # 400K tokens (per OpenAI)
+        output_token_limit=128000,  # 128K output (per OpenAI)
         temperature_constrained=True,
         supports_verbosity=True,
         supports_reasoning_effort=True,
@@ -107,8 +107,8 @@ def _initialize_default_models(self):
     self.register(ModelConfig(
         model_name="gpt-5",
         display_name="GPT-5",
-        context_window=2048000,  # 2M tokens (16x)
-        output_token_limit=16384,
+        context_window=400000,  # 400K tokens (per OpenAI)
+        output_token_limit=128000,  # 128K output (per OpenAI)
         temperature_constrained=True,
         supports_verbosity=True,
         supports_reasoning_effort=True,
@@ -241,10 +241,8 @@ def _create_model_comparison_tab(self):
 
     context_info = [
         "• 128K = ~96,000 words (short book)",
-        "• 256K = ~192,000 words (average novel)",
-        "• 512K = ~384,000 words (long novel)",
-        "• 1M = ~750,000 words (Harry Potter series)",
-        "• 2M = ~1.5M words (Encyclopedia volume)"
+        "• 400K = ~300,000 words (long novel)",
+        "• 1M = ~750,000 words (Harry Potter series)"
     ]
 
     for info in context_info:
@@ -260,10 +258,8 @@ def _create_model_comparison_tab(self):
 
 def _format_context_window(self, tokens):
     """Format context window for display"""
-    if tokens >= 2000000:
+    if tokens >= 1000000:
         return f"{tokens//1000000}M tokens"
-    elif tokens >= 1000000:
-        return f"{tokens//1000}K tokens"
     elif tokens >= 1000:
         return f"{tokens//1000}K tokens"
     else:
@@ -407,8 +403,10 @@ def _get_performance_estimate(self):
 ## Testing Checklist
 
 - [ ] All context windows display correctly
-- [ ] GPT-4o-mini shows 128K
-- [ ] GPT-5 shows 2M tokens
+- [ ] GPT-4o-mini shows 128K tokens
+- [ ] GPT-4.1 models show 1M tokens
+- [ ] GPT-5 models show 400K tokens
+- [ ] GPT-5 models show 128K max output tokens
 - [ ] Temperature constraints visible for GPT-5 models
 - [ ] Feature flags accurate (JSON, Verbosity, Reasoning)
 - [ ] Performance metrics display properly
@@ -426,12 +424,12 @@ Update README.md with model specifications table:
 | Model        | Context Window | Max Output | Features        | Best For         |
 | ------------ | -------------- | ---------- | --------------- | ---------------- |
 | GPT-4o Mini  | 128K           | 4,096      | JSON            | Quick edits      |
-| GPT-4.1 Nano | 128K           | 2,048      | JSON, Verbosity | High volume      |
-| GPT-4.1 Mini | 256K           | 4,096      | JSON, Verbosity | Longer texts     |
-| GPT-4.1      | 512K           | 8,192      | JSON, Verbosity | Professional     |
-| GPT-5 Nano   | 512K           | 4,096      | All features    | Fast processing  |
-| GPT-5 Mini   | 1M             | 8,192      | All features    | Creative writing |
-| GPT-5        | 2M             | 16,384     | All features    | Complex tasks    |
+| GPT-4.1 Nano | 1M             | 2,048      | JSON, Verbosity | High volume      |
+| GPT-4.1 Mini | 1M             | 4,096      | JSON, Verbosity | Longer texts     |
+| GPT-4.1      | 1M             | 8,192      | JSON, Verbosity | Professional     |
+| GPT-5 Nano   | 400K           | 128,000    | All features    | Fast processing  |
+| GPT-5 Mini   | 400K           | 128,000    | All features    | Creative writing |
+| GPT-5        | 400K           | 128,000    | All features    | Complex tasks    |
 ```
 
 ## Success Metrics
@@ -449,7 +447,17 @@ Update README.md with model specifications table:
 
 ## Notes
 
-- Use context7 MCP server for latest model specs
-- Use exa search for current documentation
+- Context windows per official OpenAI Platform docs (August 2025):
+  - GPT-5 series: 400K tokens context, 128K output
+  - GPT-4.1 series: 1M tokens context
+  - GPT-4o-mini: 128K tokens context
+- Pricing (Standard tier per 1M tokens):
+  - GPT-5: $1.25 input / $10.00 output
+  - GPT-5-mini: $0.25 input / $2.00 output
+  - GPT-5-nano: $0.05 input / $0.40 output
+  - GPT-4.1: $2.00 input / $8.00 output
+  - GPT-4.1-mini: $0.40 input / $1.60 output
+  - GPT-4.1-nano: $0.10 input / $0.40 output
+  - GPT-4o-mini: $0.15 input / $0.60 output
 - Keep performance estimates conservative
 - Focus on clarity over technical precision for users

@@ -3,10 +3,10 @@
   "enhancement_style": "detailed",
   "history_enabled": true,
   "history_limit": 500,
-  "selected_model": "gpt-4.1-mini",
+  "selected_model": "gpt-5",
   "model_usage_stats": {
     "gpt-5": {
-      "count": 3,
+      "count": 4,
       "total_tokens": 0,
       "avg_latency": 0,
       "user_rating": []
@@ -24,7 +24,7 @@
       "user_rating": []
     },
     "gpt-4.1": {
-      "count": 1,
+      "count": 2,
       "total_tokens": 0,
       "avg_latency": 0,
       "user_rating": []

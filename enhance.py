@@ -121,10 +121,13 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
             "style": style  # Pass style for GPT-5 temperature constraint handling
         }
         
-        # Add verbosity parameter only for models that support it (GPT-5 only)
-        # GPT-4.1 models do NOT support verbosity parameter at all
-        if model_config.supports_verbosity and "gpt-4.1" not in model_config.model_name:
-            # Map enhancement style to verbosity level for GPT-5 models
+        # GPT-5 verbosity bug workaround:
+        # GPT-5 has a bug where ANY verbosity parameter combined with reasoning_effort
+        # causes empty content to be returned. We must omit verbosity entirely.
+        # GPT-4.1 models also do NOT support verbosity parameter at all.
+        # So we skip verbosity for both GPT-4.1 and GPT-5 models.
+        if model_config.supports_verbosity and "gpt-4.1" not in model_config.model_name and "gpt-5" not in model_config.model_name:
+            # Only add verbosity for future models that properly support it
             verbosity_map = {
                 "concise": "low",
                 "balanced": "medium",
@@ -133,14 +136,12 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
             call_params["verbosity"] = verbosity_map.get(style, "medium")
         
         # Add reasoning_effort parameter for GPT-5 models
+        # IMPORTANT: GPT-5 has a bug where reasoning_effort='medium' or 'high' 
+        # causes empty content to be returned. We must use 'low' only.
         if model_config.supports_reasoning_effort:
-            # Map enhancement style to reasoning effort
-            reasoning_effort_map = {
-                "concise": "low",
-                "balanced": "medium", 
-                "detailed": "high"
-            }
-            call_params["reasoning_effort"] = reasoning_effort_map.get(style, "medium")
+            # GPT-5 bug workaround: always use 'low' reasoning_effort
+            call_params["reasoning_effort"] = "low"
+            logger.info("Using reasoning_effort='low' for GPT-5 (API bug workaround)")
             
             # For GPT-5 models with temperature constraints, use fixed temperature
             if model_config.temperature_constrained:
@@ -153,6 +154,7 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
         if not response:
             return None, "Enhancement failed - API call returned no response"
         
+        # Extract content from response
         enhanced = response.choices[0].message.content.strip()
         
         # Log token usage and cost

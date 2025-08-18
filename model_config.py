@@ -70,16 +70,9 @@ class ModelConfig:
             params["response_format"] = {"type": "json_object"}
             
         # Handle temperature constraints for GPT-5 models
-        if self.temperature_constrained and 'style' in kwargs:
-            # Map style to verbosity when temperature is constrained
-            style_to_verbosity = {
-                "concise": "low",
-                "balanced": "medium", 
-                "detailed": "high"
-            }
-            verbosity = style_to_verbosity.get(kwargs['style'], "medium")
-            if self.supports_verbosity:
-                params["verbosity"] = verbosity
+        # NOTE: Removed verbosity mapping here due to GPT-5 API bug
+        # GPT-5 only works with verbosity='low' or no verbosity
+        # This is now handled in enhance.py
             
         # Apply any additional model-specific parameters
         for key, value in self.fallback_params.items():
@@ -202,12 +195,12 @@ class ModelRegistry:
             temperature=0.3,
             temperature_min=0.0,
             temperature_max=2.0,
-            cost_per_1k_input=0.00003,  # $0.03 per 1M input tokens (80% cheaper!)
-            cost_per_1k_output=0.00012,  # Estimated proportional reduction
+            cost_per_1k_input=0.00010,  # $0.10 per 1M input tokens (per OpenAI docs)
+            cost_per_1k_output=0.00040,  # $0.40 per 1M output tokens (per OpenAI docs)
             supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
             supports_json_mode=True,
             supports_reasoning_effort=False,
-            context_window=128000,
+            context_window=1000000,  # 1M tokens (per OpenAI docs)
             deprecated=False,
             available_from=None,  # Available now!
             tier="economy"
@@ -222,12 +215,12 @@ class ModelRegistry:
             temperature=0.3,
             temperature_min=0.0,
             temperature_max=2.0,
-            cost_per_1k_input=0.00007,  # $0.07 per 1M input tokens (53% cheaper)
-            cost_per_1k_output=0.00028,  # Estimated proportional reduction
+            cost_per_1k_input=0.00040,  # $0.40 per 1M input tokens (per OpenAI docs)
+            cost_per_1k_output=0.00160,  # $1.60 per 1M output tokens (per OpenAI docs)
             supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
             supports_json_mode=True,
             supports_reasoning_effort=False,
-            context_window=256000,  # 2x context window
+            context_window=1000000,  # 1M tokens (per OpenAI docs)
             deprecated=False,
             available_from=None,  # Available now!
             tier="economy"
@@ -242,12 +235,12 @@ class ModelRegistry:
             temperature=0.3,
             temperature_min=0.0,
             temperature_max=2.0,
-            cost_per_1k_input=0.00015,  # Same as GPT-4o-mini but with better performance
-            cost_per_1k_output=0.0006,
+            cost_per_1k_input=0.00200,  # $2.00 per 1M input tokens (per OpenAI docs)
+            cost_per_1k_output=0.00800,  # $8.00 per 1M output tokens (per OpenAI docs)
             supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
             supports_json_mode=True,
             supports_reasoning_effort=False,
-            context_window=512000,  # 4x context window
+            context_window=1000000,  # 1M tokens (per OpenAI docs)
             deprecated=False,
             available_from=None,  # Available now!
             tier="standard"
@@ -258,7 +251,7 @@ class ModelRegistry:
             model_name="gpt-5-nano",
             display_name="GPT-5 Nano",
             max_tokens_param="max_completion_tokens",  # Breaking change
-            max_tokens_value=250,
+            max_tokens_value=300,  # GPT-5 needs at least 200 tokens
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint
@@ -297,7 +290,7 @@ class ModelRegistry:
             tier="standard",
             temperature_constrained=True,
             fallback_params={
-                "reasoning_effort": "medium"  # New GPT-5 parameter
+                "reasoning_effort": "low"  # GPT-5 bug: only 'low' works
             }
         ))
         
@@ -321,7 +314,7 @@ class ModelRegistry:
             tier="premium",
             temperature_constrained=True,
             fallback_params={
-                "reasoning_effort": "high"  # New GPT-5 parameter
+                "reasoning_effort": "low"  # GPT-5 bug: only 'low' works
             }
         ))
         
