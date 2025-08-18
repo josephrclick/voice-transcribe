@@ -130,8 +130,9 @@ class TestParameterMigration(unittest.TestCase):
         self.assertNotIn("max_completion_tokens", params)
         self.assertEqual(params["max_tokens"], 1000)
         
-        # GPT-4 doesn't support reasoning_effort
+        # GPT-4 doesn't support reasoning_effort or verbosity
         self.assertNotIn("reasoning_effort", params)
+        self.assertNotIn("verbosity", params)
     
     @patch('model_config.client.chat.completions.create')
     def test_parameter_migration_on_error(self, mock_create):
@@ -360,6 +361,7 @@ class TestModelTransitions(unittest.TestCase):
         # GPT-4.1 models
         gpt41 = registry.get("gpt-4.1-mini")
         self.assertFalse(gpt41.supports_reasoning_effort)  # GPT-4.1 doesn't have reasoning_effort
+        self.assertFalse(gpt41.supports_verbosity)  # GPT-4.1 doesn't support verbosity either
         self.assertEqual(gpt41.max_tokens_param, "max_tokens")
         
         # GPT-5 models

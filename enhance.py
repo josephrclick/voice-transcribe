@@ -121,19 +121,16 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
             "style": style  # Pass style for GPT-5 temperature constraint handling
         }
         
-        # Add verbosity parameter if model supports it (GPT-4.1/GPT-5 feature)
-        if model_config.supports_verbosity:
-            # Map enhancement style to verbosity level
-            # Note: GPT-4.1 models only support "medium" verbosity
-            if "gpt-4.1" in model_config.model_name:
-                call_params["verbosity"] = "medium"  # GPT-4.1 constraint
-            else:
-                verbosity_map = {
-                    "concise": "low",
-                    "balanced": "medium",
-                    "detailed": "high"
-                }
-                call_params["verbosity"] = verbosity_map.get(style, "medium")
+        # Add verbosity parameter only for models that support it (GPT-5 only)
+        # GPT-4.1 models do NOT support verbosity parameter at all
+        if model_config.supports_verbosity and "gpt-4.1" not in model_config.model_name:
+            # Map enhancement style to verbosity level for GPT-5 models
+            verbosity_map = {
+                "concise": "low",
+                "balanced": "medium",
+                "detailed": "high"
+            }
+            call_params["verbosity"] = verbosity_map.get(style, "medium")
         
         # Add reasoning_effort parameter for GPT-5 models
         if model_config.supports_reasoning_effort:

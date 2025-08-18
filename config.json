@@ -1,23 +1,35 @@
 {
-  "prompt_mode_enabled": false,
+  "prompt_mode_enabled": true,
   "enhancement_style": "detailed",
   "history_enabled": true,
   "history_limit": 500,
-  "selected_model": "gpt-4o-mini",
+  "selected_model": "gpt-4.1-mini",
   "model_usage_stats": {
     "gpt-5": {
-      "count": 2,
+      "count": 3,
       "total_tokens": 0,
       "avg_latency": 0,
       "user_rating": []
     },
     "gpt-4o-mini": {
-      "count": 2,
+      "count": 3,
       "total_tokens": 0,
       "avg_latency": 0,
       "user_rating": []
     },
     "gpt-4.1-mini": {
+      "count": 2,
+      "total_tokens": 0,
+      "avg_latency": 0,
+      "user_rating": []
+    },
+    "gpt-4.1": {
+      "count": 1,
+      "total_tokens": 0,
+      "avg_latency": 0,
+      "user_rating": []
+    },
+    "gpt-5-mini": {
       "count": 1,
       "total_tokens": 0,
       "avg_latency": 0,

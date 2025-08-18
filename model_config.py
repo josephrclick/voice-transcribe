@@ -204,7 +204,7 @@ class ModelRegistry:
             temperature_max=2.0,
             cost_per_1k_input=0.00003,  # $0.03 per 1M input tokens (80% cheaper!)
             cost_per_1k_output=0.00012,  # Estimated proportional reduction
-            supports_verbosity=True,
+            supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=128000,
@@ -224,7 +224,7 @@ class ModelRegistry:
             temperature_max=2.0,
             cost_per_1k_input=0.00007,  # $0.07 per 1M input tokens (53% cheaper)
             cost_per_1k_output=0.00028,  # Estimated proportional reduction
-            supports_verbosity=True,
+            supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=256000,  # 2x context window
@@ -244,7 +244,7 @@ class ModelRegistry:
             temperature_max=2.0,
             cost_per_1k_input=0.00015,  # Same as GPT-4o-mini but with better performance
             cost_per_1k_output=0.0006,
-            supports_verbosity=True,
+            supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=512000,  # 4x context window
