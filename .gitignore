@@ -50,3 +50,5 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+config.json
+.archive/

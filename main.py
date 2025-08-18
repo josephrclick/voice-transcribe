@@ -26,10 +26,16 @@ from typing import List, Dict, Optional
 
 # Import our enhancement module
 try:
-    from enhance import enhance_prompt, get_enhancement_styles
+    from enhance import (
+        enhance_prompt, 
+        get_enhancement_styles, 
+        get_models_by_tier, 
+        get_usage_statistics, 
+        estimate_enhancement_cost
+    )
     ENHANCEMENT_AVAILABLE = True
-except ImportError:
-    print("Warning: enhance.py not found. Prompt Mode will be disabled.")
+except ImportError as e:
+    print(f"Warning: enhance.py not found or incomplete. Prompt Mode will be disabled. Error: {e}")
     ENHANCEMENT_AVAILABLE = False
 
 # Import model configuration
@@ -87,6 +93,11 @@ class VoiceTranscribeApp:
         # Prompt Mode settings
         self.prompt_mode_enabled = False
         self.enhancement_style = "balanced"
+        
+        # Performance and cost tracking
+        self.session_cost = 0.0
+        self.session_enhancements = 0
+        self.performance_window = None
 
         # History settings
         self.history_enabled = True
@@ -266,6 +277,37 @@ class VoiceTranscribeApp:
         .prompt-controls {{
             padding: 5px;
         }}
+        
+        .tier-badge {{
+            background-color: rgba(0, 0, 0, 0.1);
+            border-radius: 3px;
+            padding: 2px 5px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-left: 5px;
+        }}
+        
+        .tier-economy {{
+            color: #28a745;
+        }}
+        
+        .tier-standard {{
+            color: #007bff;
+        }}
+        
+        .tier-premium {{
+            color: #6f42c1;
+        }}
+        
+        .new-badge {{
+            background-color: #fd7e14;
+            color: white;
+            border-radius: 3px;
+            padding: 1px 3px;
+            font-size: 9px;
+            font-weight: bold;
+            margin-left: 3px;
+        }}
         """
         
         style_provider = Gtk.CssProvider()
@@ -291,6 +333,12 @@ class VoiceTranscribeApp:
             key, modifier = Gtk.accelerator_parse("<Control><Shift>q")
             accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
                               self.toggle_prompt_mode_accelerator)
+        
+        # Ctrl+D for Performance Dashboard
+        if ENHANCEMENT_AVAILABLE and MODEL_CONFIG_AVAILABLE:
+            key, modifier = Gtk.accelerator_parse("<Control>d")
+            accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
+                              self.show_performance_dashboard_accelerator)
     
     def create_ui(self):
         """Create the user interface"""
@@ -326,6 +374,16 @@ class VoiceTranscribeApp:
         self.word_count_label.get_style_context().add_class("stats-label")
         stats_box.pack_start(self.word_count_label, False, False, 0)
         
+        # Session cost and usage
+        self.cost_label = Gtk.Label(label="Cost: $0.00")
+        self.cost_label.get_style_context().add_class("stats-label")
+        stats_box.pack_start(self.cost_label, False, False, 0)
+        
+        # Enhancement counter
+        self.usage_label = Gtk.Label(label="Enhanced: 0")
+        self.usage_label.get_style_context().add_class("stats-label")
+        stats_box.pack_start(self.usage_label, False, False, 0)
+        
         left_box.pack_start(stats_box, False, False, 0)
         header_box.pack_start(left_box, False, False, 0)
         
@@ -355,7 +413,7 @@ class VoiceTranscribeApp:
             self.style_combo.connect("changed", self.on_style_changed)
             prompt_controls.pack_start(self.style_combo, False, False, 0)
             
-            # Model selector (enabled for Phase 2)
+            # Model selector with tiered display
             model_label = Gtk.Label(label="Model:")
             model_label.set_margin_start(10)
             prompt_controls.pack_start(model_label, False, False, 0)
@@ -364,30 +422,10 @@ class VoiceTranscribeApp:
             
             # Populate available models if model config is available
             if MODEL_CONFIG_AVAILABLE:
-                available_models = model_registry.get_available_models()
-                for i, model in enumerate(available_models):
-                    # Display model name with cost information
-                    cost_per_1k = model.cost_per_1k_input * 1000  # Convert to per 1K tokens
-                    display_text = f"{model.display_name} (${cost_per_1k:.2f}/1K)"
-                    self.model_combo.append(model.model_name, display_text)
-                    
-                # Load saved preference or default to GPT-4o-mini
-                saved_model = self.config.get("selected_model", "gpt-4o-mini")
-                
-                # Set active model if it exists in the combo
-                model_found = False
-                for i in range(len(available_models)):
-                    if available_models[i].model_name == saved_model:
-                        self.model_combo.set_active(i)
-                        model_found = True
-                        break
-                
-                if not model_found and len(available_models) > 0:
-                    self.model_combo.set_active(0)
-                    
-                self.model_combo.set_sensitive(True)  # Enable for Phase 2
+                self._populate_tiered_model_selector()
+                self.model_combo.set_sensitive(True)
                 self.model_combo.connect("changed", self.on_model_changed)
-                self.model_combo.set_tooltip_text("Select AI model for enhancement")
+                self._setup_model_tooltips()
             else:
                 # Fallback if model config not available
                 self.model_combo.append_text("GPT-4o Mini")
@@ -396,6 +434,13 @@ class VoiceTranscribeApp:
                 self.model_combo.set_tooltip_text("Model configuration not available")
             
             prompt_controls.pack_start(self.model_combo, False, False, 0)
+            
+            # Performance dashboard button
+            dashboard_button = Gtk.Button(label="📊")
+            dashboard_button.connect("clicked", self.show_performance_dashboard)
+            dashboard_button.get_style_context().add_class("action-button")
+            dashboard_button.set_tooltip_text("Open Performance Dashboard")
+            prompt_controls.pack_start(dashboard_button, False, False, 0)
             
             header_box.pack_end(prompt_controls, False, False, 0)
         
@@ -425,6 +470,15 @@ class VoiceTranscribeApp:
             prompt_hint = Gtk.Label(label="Ctrl+Shift+Q: Toggle Prompt Mode")
             prompt_hint.get_style_context().add_class("stats-label")
             shortcuts_box.pack_start(prompt_hint, False, False, 0)
+            
+            if MODEL_CONFIG_AVAILABLE:
+                separator2 = Gtk.Label(label="|")
+                separator2.get_style_context().add_class("stats-label")
+                shortcuts_box.pack_start(separator2, False, False, 0)
+                
+                dashboard_hint = Gtk.Label(label="Ctrl+D: Dashboard")
+                dashboard_hint.get_style_context().add_class("stats-label")
+                shortcuts_box.pack_start(dashboard_hint, False, False, 0)
         
         button_box.pack_start(shortcuts_box, False, False, 0)
         
@@ -598,28 +652,469 @@ class VoiceTranscribeApp:
         self.show_history()
         return True
     
+    def show_performance_dashboard_accelerator(self, *args):
+        """Handle Ctrl+D accelerator"""
+        self.show_performance_dashboard()
+        return True
+    
+    def show_performance_dashboard(self, widget=None):
+        """Show performance monitoring dashboard"""
+        if hasattr(self, "performance_window") and self.performance_window:
+            self.performance_window.present()
+            return
+        
+        self.performance_window = Gtk.Window(title="Performance Dashboard")
+        self.performance_window.set_default_size(800, 600)
+        self.performance_window.set_transient_for(self.window)
+        self.performance_window.connect("destroy", lambda _w: setattr(self, "performance_window", None))
+        
+        # Create dashboard content
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        main_box.set_margin_top(20)
+        main_box.set_margin_bottom(20)
+        main_box.set_margin_start(20)
+        main_box.set_margin_end(20)
+        
+        # Title
+        title = Gtk.Label(label="Performance Dashboard")
+        title.get_style_context().add_class("panel-header")
+        main_box.pack_start(title, False, False, 0)
+        
+        # Create notebook for different views
+        notebook = Gtk.Notebook()
+        
+        # Usage Statistics Tab
+        usage_tab = self._create_usage_statistics_tab()
+        notebook.append_page(usage_tab, Gtk.Label(label="Usage Stats"))
+        
+        # Cost Analysis Tab
+        cost_tab = self._create_cost_analysis_tab()
+        notebook.append_page(cost_tab, Gtk.Label(label="Cost Analysis"))
+        
+        # Model Comparison Tab
+        comparison_tab = self._create_model_comparison_tab()
+        notebook.append_page(comparison_tab, Gtk.Label(label="Model Comparison"))
+        
+        main_box.pack_start(notebook, True, True, 0)
+        
+        # Refresh button
+        refresh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        refresh_box.set_halign(Gtk.Align.END)
+        
+        refresh_button = Gtk.Button(label="Refresh Data")
+        refresh_button.connect("clicked", self._refresh_dashboard_data)
+        refresh_button.get_style_context().add_class("action-button")
+        refresh_box.pack_start(refresh_button, False, False, 0)
+        
+        main_box.pack_start(refresh_box, False, False, 0)
+        
+        self.performance_window.add(main_box)
+        self.performance_window.show_all()
+    
+    def _create_usage_statistics_tab(self):
+        """Create usage statistics tab content"""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vbox.set_margin_top(10)
+        vbox.set_margin_bottom(10)
+        vbox.set_margin_start(10)
+        vbox.set_margin_end(10)
+        
+        # Session Statistics
+        session_frame = Gtk.Frame(label="Current Session")
+        session_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        session_box.set_margin_top(10)
+        session_box.set_margin_bottom(10)
+        session_box.set_margin_start(10)
+        session_box.set_margin_end(10)
+        
+        session_cost_label = Gtk.Label(label=f"Session Cost: ${self.session_cost:.4f}")
+        session_cost_label.set_halign(Gtk.Align.START)
+        session_box.pack_start(session_cost_label, False, False, 0)
+        
+        session_frame.add(session_box)
+        vbox.pack_start(session_frame, False, False, 0)
+        
+        # Model Usage Statistics
+        if ENHANCEMENT_AVAILABLE:
+            try:
+                usage_stats = get_usage_statistics()
+                
+                if usage_stats:
+                    stats_frame = Gtk.Frame(label="Model Usage Statistics")
+                    stats_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+                    stats_box.set_margin_top(10)
+                    stats_box.set_margin_bottom(10)
+                    stats_box.set_margin_start(10)
+                    stats_box.set_margin_end(10)
+                    
+                    for model_name, stats in usage_stats.items():
+                        model_config = model_registry.get(model_name)
+                        if model_config:
+                            tier_info = model_config.get_tier_info()
+                            model_label = Gtk.Label(
+                                label=f"{model_config.display_name} ({tier_info['tier']}): "
+                                     f"{stats['calls']} calls, ${stats['total_cost']:.4f}"
+                            )
+                            model_label.set_halign(Gtk.Align.START)
+                            stats_box.pack_start(model_label, False, False, 0)
+                    
+                    stats_frame.add(stats_box)
+                    vbox.pack_start(stats_frame, False, False, 0)
+                else:
+                    no_data_label = Gtk.Label(label="No usage data available yet.")
+                    vbox.pack_start(no_data_label, False, False, 0)
+                    
+            except Exception as e:
+                error_label = Gtk.Label(label=f"Error loading usage statistics: {e}")
+                vbox.pack_start(error_label, False, False, 0)
+        
+        scroll.add(vbox)
+        return scroll
+    
+    def _create_cost_analysis_tab(self):
+        """Create cost analysis tab content"""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vbox.set_margin_top(10)
+        vbox.set_margin_bottom(10)
+        vbox.set_margin_start(10)
+        vbox.set_margin_end(10)
+        
+        # Cost breakdown by tier
+        if MODEL_CONFIG_AVAILABLE:
+            tier_frame = Gtk.Frame(label="Cost by Tier")
+            tier_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            tier_box.set_margin_top(10)
+            tier_box.set_margin_bottom(10)
+            tier_box.set_margin_start(10)
+            tier_box.set_margin_end(10)
+            
+            try:
+                models_by_tier = get_models_by_tier()
+                for tier_name in ["economy", "standard", "premium"]:
+                    tier_models = models_by_tier[tier_name]
+                    if tier_models:
+                        tier_label = Gtk.Label(label=f"{tier_name.upper()} TIER:")
+                        tier_label.set_halign(Gtk.Align.START)
+                        tier_label.get_style_context().add_class("panel-header")
+                        tier_box.pack_start(tier_label, False, False, 0)
+                        
+                        for model in tier_models:
+                            cost_label = Gtk.Label(
+                                label=f"  {model['display']}: ${model['cost_input']*1000:.4f}/1K tokens"
+                            )
+                            cost_label.set_halign(Gtk.Align.START)
+                            tier_box.pack_start(cost_label, False, False, 0)
+                        
+                        separator = Gtk.Separator()
+                        tier_box.pack_start(separator, False, False, 5)
+            
+            except Exception as e:
+                error_label = Gtk.Label(label=f"Error loading cost data: {e}")
+                tier_box.pack_start(error_label, False, False, 0)
+            
+            tier_frame.add(tier_box)
+            vbox.pack_start(tier_frame, False, False, 0)
+        
+        scroll.add(vbox)
+        return scroll
+    
+    def _create_model_comparison_tab(self):
+        """Create model comparison tab content"""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vbox.set_margin_top(10)
+        vbox.set_margin_bottom(10)
+        vbox.set_margin_start(10)
+        vbox.set_margin_end(10)
+        
+        if MODEL_CONFIG_AVAILABLE:
+            # Create comparison table
+            comparison_frame = Gtk.Frame(label="Model Comparison")
+            comparison_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            comparison_box.set_margin_top(10)
+            comparison_box.set_margin_bottom(10)
+            comparison_box.set_margin_start(10)
+            comparison_box.set_margin_end(10)
+            
+            # Header
+            header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            header_labels = ["Model", "Tier", "Cost/1K", "Context", "Features"]
+            for label_text in header_labels:
+                label = Gtk.Label(label=label_text)
+                label.get_style_context().add_class("panel-header")
+                label.set_size_request(120, -1)
+                label.set_halign(Gtk.Align.START)
+                header_box.pack_start(label, False, False, 0)
+            
+            comparison_box.pack_start(header_box, False, False, 0)
+            
+            separator = Gtk.Separator()
+            comparison_box.pack_start(separator, False, False, 5)
+            
+            # Model rows
+            available_models = model_registry.get_available_models()
+            for model in available_models:
+                model_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+                
+                # Model name
+                name_label = Gtk.Label(label=model.display_name)
+                name_label.set_size_request(120, -1)
+                name_label.set_halign(Gtk.Align.START)
+                model_box.pack_start(name_label, False, False, 0)
+                
+                # Tier
+                tier_info = model.get_tier_info()
+                tier_label = Gtk.Label(label=tier_info['tier'].title())
+                tier_label.set_size_request(120, -1)
+                tier_label.set_halign(Gtk.Align.START)
+                model_box.pack_start(tier_label, False, False, 0)
+                
+                # Cost
+                cost_label = Gtk.Label(label=f"${model.cost_per_1k_input*1000:.4f}")
+                cost_label.set_size_request(120, -1)
+                cost_label.set_halign(Gtk.Align.START)
+                model_box.pack_start(cost_label, False, False, 0)
+                
+                # Context window
+                context_label = Gtk.Label(label=f"{model.context_window//1000}K")
+                context_label.set_size_request(120, -1)
+                context_label.set_halign(Gtk.Align.START)
+                model_box.pack_start(context_label, False, False, 0)
+                
+                # Features
+                features = []
+                if model.supports_verbosity:
+                    features.append("V")
+                if model.supports_reasoning_effort:
+                    features.append("RE")
+                if "gpt-5" in model.model_name:
+                    features.append("NEW")
+                
+                features_label = Gtk.Label(label=", ".join(features) if features else "-")
+                features_label.set_size_request(120, -1)
+                features_label.set_halign(Gtk.Align.START)
+                model_box.pack_start(features_label, False, False, 0)
+                
+                comparison_box.pack_start(model_box, False, False, 0)
+            
+            comparison_frame.add(comparison_box)
+            vbox.pack_start(comparison_frame, False, False, 0)
+        
+        scroll.add(vbox)
+        return scroll
+    
+    def _refresh_dashboard_data(self, widget):
+        """Refresh dashboard data"""
+        if hasattr(self, "performance_window") and self.performance_window:
+            self.performance_window.destroy()
+            self.performance_window = None
+            self.show_performance_dashboard()
+    
     def on_style_changed(self, widget):
         """Handle enhancement style change"""
         styles = get_enhancement_styles()
         self.enhancement_style = styles[widget.get_active()]
         self.save_preferences()
     
+    def _populate_tiered_model_selector(self):
+        """Populate model selector with tiered grouping"""
+        if not MODEL_CONFIG_AVAILABLE:
+            return
+            
+        try:
+            models_by_tier = get_models_by_tier()
+            
+            # Clear existing items
+            self.model_combo.remove_all()
+            
+            # Add models grouped by tier with visual indicators
+            tier_icons = {"economy": "🟢", "standard": "🔵", "premium": "🟣"}
+            tier_colors = {"economy": "Economy", "standard": "Standard", "premium": "Premium"}
+            
+            for tier_name in ["economy", "standard", "premium"]:
+                if models_by_tier[tier_name]:
+                    # Add tier separator with icon
+                    tier_label = f"{tier_icons[tier_name]} {tier_colors[tier_name].upper()} TIER"
+                    self.model_combo.append(None, tier_label)
+                    
+                    # Add models in this tier
+                    for model in models_by_tier[tier_name]:
+                        cost_per_1k = model["cost_input"] * 1000
+                        
+                        # Build feature indicators
+                        features = []
+                        if model["features"]["verbosity"]:
+                            features.append("V")  # Verbosity support
+                        if model["features"]["reasoning_effort"]:
+                            features.append("RE")  # Reasoning effort
+                        if "gpt-5" in model["name"]:
+                            features.append("NEW")  # New model
+                        
+                        # Create display text with proper formatting
+                        indent = "  "  # Visual indent for tier grouping
+                        name_part = model['display']
+                        cost_part = f"${cost_per_1k:.4f}/1K"
+                        
+                        if features:
+                            feature_part = f" [{','.join(features)}]"
+                            if "NEW" in features:
+                                feature_part = feature_part.replace("NEW", "🆕")
+                        else:
+                            feature_part = ""
+                        
+                        display_text = f"{indent}{name_part} ({cost_part}){feature_part}"
+                        self.model_combo.append(model["name"], display_text)
+            
+            # Set saved selection
+            saved_model = self.config.get("selected_model", "gpt-4o-mini")
+            model_found = False
+            
+            # Find and set the saved model
+            for i in range(self.model_combo.get_model().iter_n_children(None)):
+                self.model_combo.set_active(i)
+                if self.model_combo.get_active_id() == saved_model:
+                    model_found = True
+                    break
+                    
+            if not model_found:
+                # Default to first selectable model (skip separators)
+                for i in range(self.model_combo.get_model().iter_n_children(None)):
+                    self.model_combo.set_active(i)
+                    if self.model_combo.get_active_id() is not None:
+                        break
+                        
+        except Exception as e:
+            print(f"Error populating model selector: {e}")
+            # Fallback to simple list
+            self.model_combo.append("gpt-4o-mini", "GPT-4o Mini")
+            self.model_combo.set_active(0)
+    
+    def _setup_model_tooltips(self):
+        """Setup enhanced tooltips for model selector"""
+        if not MODEL_CONFIG_AVAILABLE:
+            return
+            
+        # Create comprehensive tooltip text
+        tooltip_parts = [
+            "AI Model Selection - Grouped by Performance Tier",
+            "",
+            "🟢 ECONOMY: Low-cost models for basic enhancement",
+            "🔵 STANDARD: Balanced performance and cost",
+            "🟣 PREMIUM: High-performance models with advanced features",
+            "",
+            "Features:",
+            "  V = Verbosity control",
+            "  RE = Reasoning effort",
+            "  🆕 = New GPT-5 technology",
+            "",
+            "Costs shown per 1,000 input tokens"
+        ]
+        
+        tooltip_text = "\n".join(tooltip_parts)
+        self.model_combo.set_tooltip_text(tooltip_text)
+    
     def on_model_changed(self, widget):
-        """Handle model selection change"""
-        if MODEL_CONFIG_AVAILABLE:
-            # Get the selected model ID
-            model_id = widget.get_active_id()
-            if model_id:
-                self.selected_model = model_id
-                self.config["selected_model"] = model_id
-                self.save_config()
-                
-                # Log for A/B testing
-                print(f"Model switched to: {model_id}")
-                self.track_model_usage(model_id)
-                
-                # Update cost display if applicable
-                self.update_cost_display()
+        """Handle model selection change with cost warnings"""
+        if not MODEL_CONFIG_AVAILABLE:
+            return
+            
+        model_id = widget.get_active_id()
+        if not model_id:  # Skip separator items
+            return
+            
+        # Get current and new model configs
+        current_model = self.config.get("selected_model", "gpt-4o-mini")
+        new_model_config = model_registry.get(model_id)
+        current_model_config = model_registry.get(current_model)
+        
+        if not new_model_config or not current_model_config:
+            return
+            
+        # Check if this is a more expensive model
+        cost_increase = new_model_config.cost_per_1k_input - current_model_config.cost_per_1k_input
+        
+        if cost_increase > 0.00005:  # Threshold for showing warning
+            tier_info = new_model_config.get_tier_info()
+            if self._show_cost_warning_dialog(new_model_config, current_model_config, cost_increase):
+                # User confirmed, proceed with change
+                self._apply_model_change(model_id)
+            else:
+                # User cancelled, revert selection
+                self._revert_model_selection(current_model)
+        else:
+            # No significant cost increase, apply directly
+            self._apply_model_change(model_id)
+    
+    def _apply_model_change(self, model_id):
+        """Apply the model change"""
+        self.selected_model = model_id
+        self.config["selected_model"] = model_id
+        self.save_config()
+        
+        # Log for A/B testing
+        print(f"Model switched to: {model_id}")
+        self.track_model_usage(model_id)
+        
+        # Update cost display
+        self.update_cost_display()
+        
+        # Update status
+        model_config = model_registry.get(model_id)
+        if model_config:
+            tier_info = model_config.get_tier_info()
+            self.status_label.set_text(f"Model: {model_config.display_name} ({tier_info['tier']})")
+            GLib.timeout_add_seconds(2, self._reset_status)
+    
+    def _revert_model_selection(self, previous_model):
+        """Revert model selection to previous choice"""
+        for i in range(self.model_combo.get_model().iter_n_children(None)):
+            self.model_combo.set_active(i)
+            if self.model_combo.get_active_id() == previous_model:
+                break
+    
+    def _show_cost_warning_dialog(self, new_model, current_model, cost_increase):
+        """Show cost warning dialog for expensive model changes"""
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            flags=0,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.YES_NO,
+            text="Model Cost Warning"
+        )
+        
+        # Calculate percentage increase
+        percent_increase = (cost_increase / current_model.cost_per_1k_input) * 100
+        
+        # Estimate monthly cost for typical usage (50 enhancements/month)
+        monthly_usage = 50
+        avg_tokens = 200  # Average tokens per enhancement
+        monthly_cost_increase = (avg_tokens / 1000) * cost_increase * monthly_usage
+        
+        tier_info = new_model.get_tier_info()
+        
+        secondary_text = (
+            f"You're switching from {current_model.display_name} to {new_model.display_name}.\n\n"
+            f"Cost increase: {percent_increase:.0f}% ({cost_increase*1000:.4f} → "
+            f"{new_model.cost_per_1k_input*1000:.4f} per 1K tokens)\n"
+            f"Estimated monthly increase: ${monthly_cost_increase:.2f}\n"
+            f"Tier: {tier_info['tier'].title()}\n\n"
+            f"Do you want to continue?"
+        )
+        
+        dialog.format_secondary_text(secondary_text)
+        
+        response = dialog.run()
+        dialog.destroy()
+        
+        return response == Gtk.ResponseType.YES
     
     def track_model_usage(self, model_key):
         """Track model usage for A/B testing"""
@@ -639,25 +1134,17 @@ class VoiceTranscribeApp:
         self.save_config()
     
     def update_cost_display(self):
-        """Show estimated cost savings"""
-        if not MODEL_CONFIG_AVAILABLE:
-            return
-            
-        current_model = self.config.get("selected_model", "gpt-4o-mini")
-        tokens_used = self.config.get("total_tokens_month", 0)
-        
-        model_config = model_registry.get(current_model)
-        if model_config:
-            current_cost = (tokens_used / 1000) * model_config.cost_per_1k_input
-            
-            # Show savings if using GPT-4.1
-            if current_model == "gpt-4.1-mini":
-                old_cost = (tokens_used / 1000) * 0.00015  # GPT-4o-mini cost
-                savings = old_cost - current_cost
-                
-                # Update a label if we have one (we'll add this later if needed)
-                if hasattr(self, 'cost_label'):
-                    self.cost_label.set_text(f"Monthly savings: ${savings:.2f}")
+        """Update session cost and usage display"""
+        if hasattr(self, 'cost_label'):
+            self.cost_label.set_text(f"Cost: ${self.session_cost:.4f}")
+        if hasattr(self, 'usage_label'):
+            self.usage_label.set_text(f"Enhanced: {self.session_enhancements}")
+    
+    def add_to_session_cost(self, cost):
+        """Add cost to session total and increment usage counter"""
+        self.session_cost += cost
+        self.session_enhancements += 1
+        self.update_cost_display()  # Direct call since we're already in main thread
     
     def save_config(self):
         """Save config dictionary to file"""
@@ -1101,6 +1588,16 @@ class VoiceTranscribeApp:
         
         # Clear enhancement status
         self.enhancement_label.set_text("")
+        
+        # Estimate and add cost for this enhancement (thread-safe)
+        if MODEL_CONFIG_AVAILABLE and ENHANCEMENT_AVAILABLE:
+            try:
+                current_model = self.config.get("selected_model", "gpt-4o-mini")
+                estimated_cost = estimate_enhancement_cost(self.transcript_text, current_model)
+                # Use GLib.idle_add for thread safety
+                GLib.idle_add(lambda: self.add_to_session_cost(estimated_cost) or False)
+            except Exception as e:
+                print(f"Error estimating cost: {e}")
 
         # Copy enhanced version to clipboard
         self._copy_to_clipboard(enhanced)
@@ -1169,6 +1666,11 @@ class VoiceTranscribeApp:
         # Reset counters
         self.word_count_label.set_text("Words: 0")
         self.elapsed_label.set_text("Time: 0:00")
+        
+        # Reset session tracking (optional - could be preserved across transcripts)
+        # self.session_cost = 0.0
+        # self.session_enhancements = 0
+        # self.update_cost_display()
         
         # Disable action buttons
         self.copy_original_button.set_sensitive(False)
