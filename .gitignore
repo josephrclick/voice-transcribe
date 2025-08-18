@@ -2,10 +2,6 @@
 .env
 .env.local
 
-# Dev
-test*.*
-# Note: CLAUDE.md and .claude/ are now tracked for development documentation
-
 # Python
 __pycache__/
 *.py[cod]
