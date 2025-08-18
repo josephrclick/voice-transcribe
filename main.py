@@ -374,10 +374,7 @@ class VoiceTranscribeApp:
         self.word_count_label.get_style_context().add_class("stats-label")
         stats_box.pack_start(self.word_count_label, False, False, 0)
         
-        # Session cost and usage
-        self.cost_label = Gtk.Label(label="Cost: $0.00")
-        self.cost_label.get_style_context().add_class("stats-label")
-        stats_box.pack_start(self.cost_label, False, False, 0)
+        # Session usage tracking (cost tracking is now silent)
         
         # Enhancement counter
         self.usage_label = Gtk.Label(label="Enhanced: 0")
@@ -687,9 +684,7 @@ class VoiceTranscribeApp:
         usage_tab = self._create_usage_statistics_tab()
         notebook.append_page(usage_tab, Gtk.Label(label="Usage Stats"))
         
-        # Cost Analysis Tab
-        cost_tab = self._create_cost_analysis_tab()
-        notebook.append_page(cost_tab, Gtk.Label(label="Cost Analysis"))
+        # Cost Analysis Tab removed - tracking is now silent for dashboard only
         
         # Model Comparison Tab
         comparison_tab = self._create_model_comparison_tab()
@@ -730,9 +725,6 @@ class VoiceTranscribeApp:
         session_box.set_margin_start(10)
         session_box.set_margin_end(10)
         
-        session_cost_label = Gtk.Label(label=f"Session Cost: ${self.session_cost:.4f}")
-        session_cost_label.set_halign(Gtk.Align.START)
-        session_box.pack_start(session_cost_label, False, False, 0)
         
         session_frame.add(session_box)
         vbox.pack_start(session_frame, False, False, 0)
@@ -756,7 +748,7 @@ class VoiceTranscribeApp:
                             tier_info = model_config.get_tier_info()
                             model_label = Gtk.Label(
                                 label=f"{model_config.display_name} ({tier_info['tier']}): "
-                                     f"{stats['calls']} calls, ${stats['total_cost']:.4f}"
+                                     f"{stats['calls']} calls"
                             )
                             model_label.set_halign(Gtk.Align.START)
                             stats_box.pack_start(model_label, False, False, 0)
@@ -774,55 +766,6 @@ class VoiceTranscribeApp:
         scroll.add(vbox)
         return scroll
     
-    def _create_cost_analysis_tab(self):
-        """Create cost analysis tab content"""
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        vbox.set_margin_top(10)
-        vbox.set_margin_bottom(10)
-        vbox.set_margin_start(10)
-        vbox.set_margin_end(10)
-        
-        # Cost breakdown by tier
-        if MODEL_CONFIG_AVAILABLE:
-            tier_frame = Gtk.Frame(label="Cost by Tier")
-            tier_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-            tier_box.set_margin_top(10)
-            tier_box.set_margin_bottom(10)
-            tier_box.set_margin_start(10)
-            tier_box.set_margin_end(10)
-            
-            try:
-                models_by_tier = get_models_by_tier()
-                for tier_name in ["economy", "standard", "premium"]:
-                    tier_models = models_by_tier[tier_name]
-                    if tier_models:
-                        tier_label = Gtk.Label(label=f"{tier_name.upper()} TIER:")
-                        tier_label.set_halign(Gtk.Align.START)
-                        tier_label.get_style_context().add_class("panel-header")
-                        tier_box.pack_start(tier_label, False, False, 0)
-                        
-                        for model in tier_models:
-                            cost_label = Gtk.Label(
-                                label=f"  {model['display']}: ${model['cost_input']*1000:.4f}/1K tokens"
-                            )
-                            cost_label.set_halign(Gtk.Align.START)
-                            tier_box.pack_start(cost_label, False, False, 0)
-                        
-                        separator = Gtk.Separator()
-                        tier_box.pack_start(separator, False, False, 5)
-            
-            except Exception as e:
-                error_label = Gtk.Label(label=f"Error loading cost data: {e}")
-                tier_box.pack_start(error_label, False, False, 0)
-            
-            tier_frame.add(tier_box)
-            vbox.pack_start(tier_frame, False, False, 0)
-        
-        scroll.add(vbox)
-        return scroll
     
     def _create_model_comparison_tab(self):
         """Create model comparison tab content"""
@@ -846,7 +789,7 @@ class VoiceTranscribeApp:
             
             # Header
             header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            header_labels = ["Model", "Tier", "Cost/1K", "Context", "Features"]
+            header_labels = ["Model", "Tier", "Context", "Features"]
             for label_text in header_labels:
                 label = Gtk.Label(label=label_text)
                 label.get_style_context().add_class("panel-header")
@@ -876,12 +819,6 @@ class VoiceTranscribeApp:
                 tier_label.set_size_request(120, -1)
                 tier_label.set_halign(Gtk.Align.START)
                 model_box.pack_start(tier_label, False, False, 0)
-                
-                # Cost
-                cost_label = Gtk.Label(label=f"${model.cost_per_1k_input*1000:.4f}")
-                cost_label.set_size_request(120, -1)
-                cost_label.set_halign(Gtk.Align.START)
-                model_box.pack_start(cost_label, False, False, 0)
                 
                 # Context window
                 context_label = Gtk.Label(label=f"{model.context_window//1000}K")
@@ -947,8 +884,6 @@ class VoiceTranscribeApp:
                     
                     # Add models in this tier
                     for model in models_by_tier[tier_name]:
-                        cost_per_1k = model["cost_input"] * 1000
-                        
                         # Build feature indicators
                         features = []
                         if model["features"]["verbosity"]:
@@ -958,10 +893,9 @@ class VoiceTranscribeApp:
                         if "gpt-5" in model["name"]:
                             features.append("NEW")  # New model
                         
-                        # Create display text with proper formatting
+                        # Create display text without cost information
                         indent = "  "  # Visual indent for tier grouping
                         name_part = model['display']
-                        cost_part = f"${cost_per_1k:.4f}/1K"
                         
                         if features:
                             feature_part = f" [{','.join(features)}]"
@@ -970,7 +904,7 @@ class VoiceTranscribeApp:
                         else:
                             feature_part = ""
                         
-                        display_text = f"{indent}{name_part} ({cost_part}){feature_part}"
+                        display_text = f"{indent}{name_part}{feature_part}"
                         self.model_combo.append(model["name"], display_text)
             
             # Set saved selection
@@ -1006,23 +940,21 @@ class VoiceTranscribeApp:
         tooltip_parts = [
             "AI Model Selection - Grouped by Performance Tier",
             "",
-            "🟢 ECONOMY: Low-cost models for basic enhancement",
-            "🔵 STANDARD: Balanced performance and cost",
+            "🟢 ECONOMY: Fast, efficient models for basic enhancement",
+            "🔵 STANDARD: Balanced performance models",
             "🟣 PREMIUM: High-performance models with advanced features",
             "",
             "Features:",
             "  V = Verbosity control",
             "  RE = Reasoning effort",
-            "  🆕 = New GPT-5 technology",
-            "",
-            "Costs shown per 1,000 input tokens"
+            "  🆕 = New GPT-5 technology"
         ]
         
         tooltip_text = "\n".join(tooltip_parts)
         self.model_combo.set_tooltip_text(tooltip_text)
     
     def on_model_changed(self, widget):
-        """Handle model selection change with cost warnings"""
+        """Handle model selection change without cost warnings"""
         if not MODEL_CONFIG_AVAILABLE:
             return
             
@@ -1030,28 +962,8 @@ class VoiceTranscribeApp:
         if not model_id:  # Skip separator items
             return
             
-        # Get current and new model configs
-        current_model = self.config.get("selected_model", "gpt-4o-mini")
-        new_model_config = model_registry.get(model_id)
-        current_model_config = model_registry.get(current_model)
-        
-        if not new_model_config or not current_model_config:
-            return
-            
-        # Check if this is a more expensive model
-        cost_increase = new_model_config.cost_per_1k_input - current_model_config.cost_per_1k_input
-        
-        if cost_increase > 0.00005:  # Threshold for showing warning
-            tier_info = new_model_config.get_tier_info()
-            if self._show_cost_warning_dialog(new_model_config, current_model_config, cost_increase):
-                # User confirmed, proceed with change
-                self._apply_model_change(model_id)
-            else:
-                # User cancelled, revert selection
-                self._revert_model_selection(current_model)
-        else:
-            # No significant cost increase, apply directly
-            self._apply_model_change(model_id)
+        # Direct model switch without warnings
+        self._apply_model_change(model_id)
     
     def _apply_model_change(self, model_id):
         """Apply the model change"""
@@ -1073,48 +985,6 @@ class VoiceTranscribeApp:
             self.status_label.set_text(f"Model: {model_config.display_name} ({tier_info['tier']})")
             GLib.timeout_add_seconds(2, self._reset_status)
     
-    def _revert_model_selection(self, previous_model):
-        """Revert model selection to previous choice"""
-        for i in range(self.model_combo.get_model().iter_n_children(None)):
-            self.model_combo.set_active(i)
-            if self.model_combo.get_active_id() == previous_model:
-                break
-    
-    def _show_cost_warning_dialog(self, new_model, current_model, cost_increase):
-        """Show cost warning dialog for expensive model changes"""
-        dialog = Gtk.MessageDialog(
-            transient_for=self.window,
-            flags=0,
-            message_type=Gtk.MessageType.WARNING,
-            buttons=Gtk.ButtonsType.YES_NO,
-            text="Model Cost Warning"
-        )
-        
-        # Calculate percentage increase
-        percent_increase = (cost_increase / current_model.cost_per_1k_input) * 100
-        
-        # Estimate monthly cost for typical usage (50 enhancements/month)
-        monthly_usage = 50
-        avg_tokens = 200  # Average tokens per enhancement
-        monthly_cost_increase = (avg_tokens / 1000) * cost_increase * monthly_usage
-        
-        tier_info = new_model.get_tier_info()
-        
-        secondary_text = (
-            f"You're switching from {current_model.display_name} to {new_model.display_name}.\n\n"
-            f"Cost increase: {percent_increase:.0f}% ({cost_increase*1000:.4f} → "
-            f"{new_model.cost_per_1k_input*1000:.4f} per 1K tokens)\n"
-            f"Estimated monthly increase: ${monthly_cost_increase:.2f}\n"
-            f"Tier: {tier_info['tier'].title()}\n\n"
-            f"Do you want to continue?"
-        )
-        
-        dialog.format_secondary_text(secondary_text)
-        
-        response = dialog.run()
-        dialog.destroy()
-        
-        return response == Gtk.ResponseType.YES
     
     def track_model_usage(self, model_key):
         """Track model usage for A/B testing"""
@@ -1134,9 +1004,7 @@ class VoiceTranscribeApp:
         self.save_config()
     
     def update_cost_display(self):
-        """Update session cost and usage display"""
-        if hasattr(self, 'cost_label'):
-            self.cost_label.set_text(f"Cost: ${self.session_cost:.4f}")
+        """Update session usage display (cost tracking is now silent)"""
         if hasattr(self, 'usage_label'):
             self.usage_label.set_text(f"Enhanced: {self.session_enhancements}")
     
