@@ -91,6 +91,9 @@ class VoiceTranscribeApp:
         # History settings
         self.history_enabled = True
         self.history_limit = 500
+        
+        # Initialize config dictionary
+        self.config = {}
 
         # Load saved preferences
         self.load_preferences()
@@ -656,22 +659,32 @@ class VoiceTranscribeApp:
                 if hasattr(self, 'cost_label'):
                     self.cost_label.set_text(f"Monthly savings: ${savings:.2f}")
     
-    def save_preferences(self):
-        """Save user preferences to config file"""
-        prefs = {
-            "prompt_mode_enabled": self.prompt_mode_enabled,
-            "enhancement_style": self.enhancement_style,
-            "history_enabled": self.history_enabled,
-            "history_limit": self.history_limit,
-            "selected_model": "gpt-4o-mini",  # Default for Phase 1
-            "model_preferences": {
-                "auto_fallback": True,  # Automatically fall back to default if selected model unavailable
-                "log_token_usage": True,  # Log token usage for cost tracking
-            }
-        }
+    def save_config(self):
+        """Save config dictionary to file"""
         try:
             with open("config.json", "w") as f:
-                json.dump(prefs, f, indent=2)
+                json.dump(self.config, f, indent=2)
+        except OSError as e:
+            logging.error("Failed to save config: %s", e)
+            print("Unable to save config. Please check file permissions.")
+    
+    def save_preferences(self):
+        """Save user preferences to config file"""
+        # Update config dictionary with current values
+        self.config["prompt_mode_enabled"] = self.prompt_mode_enabled
+        self.config["enhancement_style"] = self.enhancement_style
+        self.config["history_enabled"] = self.history_enabled
+        self.config["history_limit"] = self.history_limit
+        self.config["selected_model"] = getattr(self, "selected_model", "gpt-4o-mini")
+        self.config["model_preferences"] = getattr(self, "model_preferences", {
+            "auto_fallback": True,
+            "log_token_usage": True
+        })
+        
+        # Save the config
+        try:
+            with open("config.json", "w") as f:
+                json.dump(self.config, f, indent=2)
         except OSError as e:
             logging.error("Failed to save preferences: %s", e)
             print("Unable to save preferences. Please check file permissions.")
@@ -683,6 +696,9 @@ class VoiceTranscribeApp:
         try:
             with open("config.json", "r") as f:
                 prefs = json.load(f)
+                # Store the entire config for later use
+                self.config = prefs
+                # Also set individual attributes for backward compatibility
                 self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
                 self.enhancement_style = prefs.get("enhancement_style", "balanced")
                 self.history_enabled = prefs.get("history_enabled", True)
@@ -705,6 +721,15 @@ class VoiceTranscribeApp:
             self.enhancement_style = "balanced"
             self.history_enabled = True
             self.history_limit = 500
+            # Also set default config dictionary
+            self.config = {
+                "selected_model": self.selected_model,
+                "model_preferences": self.model_preferences,
+                "prompt_mode_enabled": self.prompt_mode_enabled,
+                "enhancement_style": self.enhancement_style,
+                "history_enabled": self.history_enabled,
+                "history_limit": self.history_limit
+            }
 
     def load_history(self) -> List[Dict[str, Optional[str]]]:
         """Load history entries from JSONL file"""
