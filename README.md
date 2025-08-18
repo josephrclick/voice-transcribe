@@ -134,10 +134,15 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
    - **Concise**: For when you need to get to the point
    - **Balanced**: The Goldilocks zone of prompts
    - **Detailed**: For when you need the LLM to really get it
-3. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
-4. **Watch the magic** - See a preview while it enhances: "Enhancing: um, so like, I need a function that..."
-5. **Get enhanced** - "Create a Python function that reads CSV files, handles encoding issues, and provides error handling with clear documentation"
-6. **Copy what you need** - Separate copy buttons for original and enhanced versions
+3. **Select your AI model** (NEW!):
+   - **GPT-4o Mini**: Current model ($0.15/1K tokens)
+   - **GPT-4.1 Mini**: Coming Q1 2026 - 53% cheaper! ($0.07/1K tokens)
+   - Model selection persists between sessions
+   - Automatic fallback if selected model unavailable
+4. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
+5. **Watch the magic** - See a preview while it enhances: "Enhancing: um, so like, I need a function that..."
+6. **Get enhanced** - "Create a Python function that reads CSV files, handles encoding issues, and provides error handling with clear documentation"
+7. **Copy what you need** - Separate copy buttons for original and enhanced versions
 
 ### Side-by-Side View
 
@@ -234,6 +239,8 @@ Stays visible because out of sight, out of mind, and we can't have that.
 
 - 📝 History of your ramblings (and their enhanced versions)
 - 🌍 More language support
+- 🤖 More AI models (GPT-5 ready when it drops!)
+- 📊 A/B testing dashboard to compare model performance
 - 🎨 Theme customization (for the 3 people who don't like dark mode)
 - 🤖 Direct LLM integration (skip the copy/paste dance)
 - 🎯 Smart routing to different LLMs based on prompt type

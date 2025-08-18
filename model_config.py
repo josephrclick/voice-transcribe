@@ -159,12 +159,12 @@ class ModelRegistry:
             model_name="gpt-4.1-mini",
             display_name="GPT-4.1 Mini",
             max_tokens_param="max_tokens",
-            max_tokens_value=200,
-            temperature=0.7,
+            max_tokens_value=1000,
+            temperature=0.3,
             temperature_min=0.0,
             temperature_max=2.0,
-            cost_per_1k_input=0.00012,  # Estimated 20% cheaper
-            cost_per_1k_output=0.00048,
+            cost_per_1k_input=0.00007,  # $0.07 per 1M input tokens (53% cheaper)
+            cost_per_1k_output=0.00028,  # Estimated proportional reduction
             supports_verbosity=True,
             supports_json_mode=True,
             context_window=256000,  # 2x context window
