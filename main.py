@@ -299,6 +299,10 @@ class VoiceTranscribeApp:
             color: #6f42c1;
         }}
         
+        .tier-flagship {{
+            color: #fd7e14;
+        }}
+        
         .new-badge {{
             background-color: #fd7e14;
             color: white;
@@ -1053,10 +1057,10 @@ class VoiceTranscribeApp:
             self.model_combo.remove_all()
             
             # Add models grouped by tier with visual indicators
-            tier_icons = {"economy": "🟢", "standard": "🔵", "premium": "🟣"}
-            tier_colors = {"economy": "Economy", "standard": "Standard", "premium": "Premium"}
+            tier_icons = {"economy": "🟢", "standard": "🔵", "premium": "🟣", "flagship": "🟡"}
+            tier_colors = {"economy": "Economy", "standard": "Standard", "premium": "Premium", "flagship": "Flagship"}
             
-            for tier_name in ["economy", "standard", "premium"]:
+            for tier_name in ["economy", "standard", "premium", "flagship"]:
                 if models_by_tier[tier_name]:
                     # Add tier separator with icon
                     tier_label = f"{tier_icons[tier_name]} {tier_colors[tier_name].upper()} TIER"
@@ -1123,6 +1127,7 @@ class VoiceTranscribeApp:
             "🟢 ECONOMY: Fast, efficient models for basic enhancement",
             "🔵 STANDARD: Balanced performance models",
             "🟣 PREMIUM: High-performance models with advanced features",
+            "🟡 FLAGSHIP: Top-tier models with maximum capabilities",
             "",
             "Features:",
             "  V = Verbosity control",

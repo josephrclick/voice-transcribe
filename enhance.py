@@ -228,7 +228,7 @@ def get_all_models():
 def get_models_by_tier():
     """Return models grouped by tier for UI"""
     models = model_registry.get_available_models()
-    by_tier = {"economy": [], "standard": [], "premium": []}
+    by_tier = {"economy": [], "standard": [], "premium": [], "flagship": []}
     
     for model in models:
         tier_info = model.get_tier_info()
