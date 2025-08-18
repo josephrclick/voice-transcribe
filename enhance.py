@@ -124,12 +124,16 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
         # Add verbosity parameter if model supports it (GPT-4.1/GPT-5 feature)
         if model_config.supports_verbosity:
             # Map enhancement style to verbosity level
-            verbosity_map = {
-                "concise": "low",
-                "balanced": "medium",
-                "detailed": "high"
-            }
-            call_params["verbosity"] = verbosity_map.get(style, "medium")
+            # Note: GPT-4.1 models only support "medium" verbosity
+            if "gpt-4.1" in model_config.model_name:
+                call_params["verbosity"] = "medium"  # GPT-4.1 constraint
+            else:
+                verbosity_map = {
+                    "concise": "low",
+                    "balanced": "medium",
+                    "detailed": "high"
+                }
+                call_params["verbosity"] = verbosity_map.get(style, "medium")
         
         # Add reasoning_effort parameter for GPT-5 models
         if model_config.supports_reasoning_effort:
@@ -141,10 +145,10 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
             }
             call_params["reasoning_effort"] = reasoning_effort_map.get(style, "medium")
             
-            # For GPT-5 models with temperature constraints, reduce temperature
+            # For GPT-5 models with temperature constraints, use fixed temperature
             if model_config.temperature_constrained:
-                call_params["temperature"] = min(0.2, model_config.temperature_max)
-                logger.info(f"Using constrained temperature {call_params['temperature']} for GPT-5 model")
+                call_params["temperature"] = 1.0  # GPT-5 only accepts temperature=1.0
+                logger.info(f"Using fixed temperature 1.0 for GPT-5 model (API constraint)")
         
         # Use model adapter for API call with automatic fallback
         response = model_adapter.call_with_fallback(**call_params)

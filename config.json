@@ -2,5 +2,30 @@
   "prompt_mode_enabled": false,
   "enhancement_style": "detailed",
   "history_enabled": true,
-  "history_limit": 500
+  "history_limit": 500,
+  "selected_model": "gpt-4o-mini",
+  "model_usage_stats": {
+    "gpt-5": {
+      "count": 2,
+      "total_tokens": 0,
+      "avg_latency": 0,
+      "user_rating": []
+    },
+    "gpt-4o-mini": {
+      "count": 2,
+      "total_tokens": 0,
+      "avg_latency": 0,
+      "user_rating": []
+    },
+    "gpt-4.1-mini": {
+      "count": 1,
+      "total_tokens": 0,
+      "avg_latency": 0,
+      "user_rating": []
+    }
+  },
+  "model_preferences": {
+    "auto_fallback": true,
+    "log_token_usage": true
+  }
 }

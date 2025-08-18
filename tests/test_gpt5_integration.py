@@ -79,12 +79,18 @@ class TestGPT5ModelConfigurations(unittest.TestCase):
     
     def test_temperature_constraints(self):
         """Test temperature constraints for GPT-5 models."""
-        # GPT-5 models have temperature constraints
-        self.assertEqual(self.gpt5_nano.temperature_min, 0.1)
-        self.assertEqual(self.gpt5_nano.temperature_max, 0.9)
+        # GPT-5 models have temperature fixed at 1.0
+        self.assertEqual(self.gpt5_nano.temperature_min, 1.0)
+        self.assertEqual(self.gpt5_nano.temperature_max, 1.0)
+        self.assertEqual(self.gpt5_nano.temperature, 1.0)
         
-        self.assertEqual(self.gpt5_mini.temperature_min, 0.1)
-        self.assertEqual(self.gpt5_mini.temperature_max, 0.9)
+        self.assertEqual(self.gpt5_mini.temperature_min, 1.0)
+        self.assertEqual(self.gpt5_mini.temperature_max, 1.0)
+        self.assertEqual(self.gpt5_mini.temperature, 1.0)
+        
+        self.assertEqual(self.gpt5.temperature_min, 1.0)
+        self.assertEqual(self.gpt5.temperature_max, 1.0)
+        self.assertEqual(self.gpt5.temperature, 1.0)
 
 
 class TestParameterMigration(unittest.TestCase):
