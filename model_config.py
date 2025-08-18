@@ -32,6 +32,7 @@ class ModelConfig:
     supports_json_mode: bool = True
     supports_reasoning_effort: bool = False
     context_window: int = 128000
+    output_token_limit: int = 4096  # Maximum output tokens for this model
     deprecated: bool = False
     available_from: Optional[str] = None  # ISO date string
     sunset_date: Optional[str] = None  # ISO date string
@@ -147,7 +148,8 @@ class ModelConfig:
         tier_colors = {
             "economy": "#28a745",  # Green
             "standard": "#007bff", # Blue
-            "premium": "#6f42c1"   # Purple
+            "premium": "#6f42c1",  # Purple
+            "flagship": "#dc3545"  # Red for premium flagship models
         }
         
         return {
@@ -155,6 +157,52 @@ class ModelConfig:
             "color": tier_colors.get(self.tier, "#6c757d"),
             "description": f"{self.tier.title()} tier model"
         }
+    
+    def get_dashboard_info(self) -> Dict[str, Any]:
+        """Get comprehensive model info for dashboard display"""
+        return {
+            "name": self.display_name,
+            "model_id": self.model_name,
+            "tier": self.tier,
+            "context_window": self.context_window,
+            "context_human": self._humanize_context(),
+            "output_limit": self.output_token_limit,
+            "temperature": {
+                "min": self.temperature_min,
+                "max": self.temperature_max,
+                "constrained": self.temperature_constrained
+            },
+            "features": {
+                "json_mode": self.supports_json_mode,
+                "verbosity": self.supports_verbosity,
+                "reasoning": self.supports_reasoning_effort
+            },
+            "performance": self._get_performance_estimate()
+        }
+
+    def _humanize_context(self) -> str:
+        """Convert token count to human-readable format"""
+        tokens = self.context_window
+        words = tokens * 0.75  # Approximate
+
+        if words >= 1500000:
+            return f"~{words/1000000:.1f}M words"
+        elif words >= 1000:
+            return f"~{words/1000:.0f}K words"
+        else:
+            return f"~{words:.0f} words"
+
+    def _get_performance_estimate(self) -> Dict[str, str]:
+        """Estimate performance characteristics"""
+        # Rough estimates based on model tier
+        if "nano" in self.model_name:
+            return {"speed": "fastest", "latency": "low"}
+        elif "mini" in self.model_name:
+            return {"speed": "fast", "latency": "medium"}
+        elif "5" in self.model_name:
+            return {"speed": "moderate", "latency": "higher"}
+        else:
+            return {"speed": "standard", "latency": "standard"}
 
 
 class ModelRegistry:
@@ -182,6 +230,7 @@ class ModelRegistry:
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=128000,
+            output_token_limit=4096,
             deprecated=False,
             tier="standard"
         ))
@@ -197,10 +246,11 @@ class ModelRegistry:
             temperature_max=2.0,
             cost_per_1k_input=0.00010,  # $0.10 per 1M input tokens (per OpenAI docs)
             cost_per_1k_output=0.00040,  # $0.40 per 1M output tokens (per OpenAI docs)
-            supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
+            supports_verbosity=True,  # GPT-4.1 models support verbosity per ticket
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=1000000,  # 1M tokens (per OpenAI docs)
+            output_token_limit=2048,
             deprecated=False,
             available_from=None,  # Available now!
             tier="economy"
@@ -217,10 +267,11 @@ class ModelRegistry:
             temperature_max=2.0,
             cost_per_1k_input=0.00040,  # $0.40 per 1M input tokens (per OpenAI docs)
             cost_per_1k_output=0.00160,  # $1.60 per 1M output tokens (per OpenAI docs)
-            supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
+            supports_verbosity=True,  # GPT-4.1 models support verbosity per ticket
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=1000000,  # 1M tokens (per OpenAI docs)
+            output_token_limit=4096,
             deprecated=False,
             available_from=None,  # Available now!
             tier="economy"
@@ -237,10 +288,11 @@ class ModelRegistry:
             temperature_max=2.0,
             cost_per_1k_input=0.00200,  # $2.00 per 1M input tokens (per OpenAI docs)
             cost_per_1k_output=0.00800,  # $8.00 per 1M output tokens (per OpenAI docs)
-            supports_verbosity=False,  # GPT-4.1 models do NOT support verbosity
+            supports_verbosity=True,  # GPT-4.1 models support verbosity per ticket
             supports_json_mode=True,
             supports_reasoning_effort=False,
             context_window=1000000,  # 1M tokens (per OpenAI docs)
+            output_token_limit=8192,
             deprecated=False,
             available_from=None,  # Available now!
             tier="standard"
@@ -255,12 +307,13 @@ class ModelRegistry:
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint
-            cost_per_1k_input=0.00005,  # Ultra-cheap
-            cost_per_1k_output=0.00020,
+            cost_per_1k_input=0.00005,  # $0.05 per 1M input tokens (per OpenAI docs)
+            cost_per_1k_output=0.00040,  # $0.40 per 1M output tokens (per OpenAI docs)
             supports_verbosity=True,
             supports_json_mode=True,
             supports_reasoning_effort=True,
-            context_window=512000,  # 4x context window
+            context_window=400000,  # 400K tokens (per OpenAI docs)
+            output_token_limit=128000,  # 128K output (per OpenAI docs)
             deprecated=False,
             available_from=None,  # Available now for testing
             tier="economy",
@@ -279,12 +332,13 @@ class ModelRegistry:
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint
-            cost_per_1k_input=0.00012,
-            cost_per_1k_output=0.00048,
+            cost_per_1k_input=0.00025,  # $0.25 per 1M input tokens (per OpenAI docs)
+            cost_per_1k_output=0.00200,  # $2.00 per 1M output tokens (per OpenAI docs)
             supports_verbosity=True,
             supports_json_mode=True,
             supports_reasoning_effort=True,
-            context_window=1024000,  # 8x context window
+            context_window=400000,  # 400K tokens (per OpenAI docs)
+            output_token_limit=128000,  # 128K output (per OpenAI docs)
             deprecated=False,
             available_from=None,  # Available now for testing
             tier="standard",
@@ -294,7 +348,7 @@ class ModelRegistry:
             }
         ))
         
-        # GPT-5 (full) - Available for testing (Premium tier)
+        # GPT-5 (full) - Available for testing (Flagship tier)
         self.register(ModelConfig(
             model_name="gpt-5",
             display_name="GPT-5",
@@ -303,15 +357,16 @@ class ModelRegistry:
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint
-            cost_per_1k_input=0.00030,
-            cost_per_1k_output=0.00120,
+            cost_per_1k_input=0.00125,  # $1.25 per 1M input tokens (per OpenAI docs)
+            cost_per_1k_output=0.01000,  # $10.00 per 1M output tokens (per OpenAI docs)
             supports_verbosity=True,
             supports_json_mode=True,
             supports_reasoning_effort=True,
-            context_window=2048000,  # 16x context window
+            context_window=400000,  # 400K tokens (per OpenAI docs)
+            output_token_limit=128000,  # 128K output (per OpenAI docs)
             deprecated=False,
             available_from=None,  # Available now for testing
-            tier="premium",
+            tier="flagship",
             temperature_constrained=True,
             fallback_params={
                 "reasoning_effort": "low"  # GPT-5 bug: only 'low' works

@@ -135,12 +135,23 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
    - **Balanced**: The Goldilocks zone of prompts
    - **Detailed**: For when you need the LLM to really get it
 3. **Select your AI model** (NEW!):
-   - **GPT-4o Mini**: Original model ($0.15/1K tokens)
-   - **GPT-4.1 Nano**: Ultra budget-friendly - 80% cheaper! ($0.03/1K tokens)
-   - **GPT-4.1 Mini**: Best value - 53% cheaper! ($0.07/1K tokens)
-   - **GPT-4.1**: Premium performance, same price as GPT-4o-mini ($0.15/1K tokens)
-   - Model selection persists between sessions
-   - Automatic fallback if selected model unavailable
+
+## Available Models
+
+| Model        | Context Window | Max Output | Features        | Best For         |
+| ------------ | -------------- | ---------- | --------------- | ---------------- |
+| GPT-4o Mini  | 128K           | 4,096      | JSON            | Quick edits      |
+| GPT-4.1 Nano | 1M             | 2,048      | JSON, Verbosity | High volume      |
+| GPT-4.1 Mini | 1M             | 4,096      | JSON, Verbosity | Longer texts     |
+| GPT-4.1      | 1M             | 8,192      | JSON, Verbosity | Professional     |
+| GPT-5 Nano   | 400K           | 128,000    | All features    | Fast processing  |
+| GPT-5 Mini   | 400K           | 128,000    | All features    | Creative writing |
+| GPT-5        | 400K           | 128,000    | All features    | Complex tasks    |
+
+- Model selection persists between sessions
+- Automatic fallback if selected model unavailable
+- Access detailed specifications and performance metrics in the dashboard
+
 4. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
 5. **Watch the magic** - See a preview while it enhances: "Enhancing: um, so like, I need a function that..."
 6. **Get enhanced** - "Create a Python function that reads CSV files, handles encoding issues, and provides error handling with clear documentation"

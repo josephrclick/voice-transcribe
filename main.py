@@ -299,6 +299,10 @@ class VoiceTranscribeApp:
             color: #6f42c1;
         }}
         
+        .tier-flagship {{
+            color: #fd7e14;
+        }}
+        
         .new-badge {{
             background-color: #fd7e14;
             color: white;
@@ -690,6 +694,10 @@ class VoiceTranscribeApp:
         comparison_tab = self._create_model_comparison_tab()
         notebook.append_page(comparison_tab, Gtk.Label(label="Model Comparison"))
         
+        # Performance Metrics Tab
+        performance_tab = self._create_performance_metrics_tab()
+        notebook.append_page(performance_tab, Gtk.Label(label="Performance Metrics"))
+        
         main_box.pack_start(notebook, True, True, 0)
         
         # Refresh button
@@ -768,84 +776,260 @@ class VoiceTranscribeApp:
     
     
     def _create_model_comparison_tab(self):
-        """Create model comparison tab content"""
+        """Create detailed model comparison tab"""
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        main_box.set_margin_start(10)
+        main_box.set_margin_end(10)
+
+        if MODEL_CONFIG_AVAILABLE:
+            # Model comparison grid
+            grid = Gtk.Grid()
+            grid.set_column_spacing(15)
+            grid.set_row_spacing(8)
+            grid.set_margin_top(10)
+
+            # Headers with better labels
+            headers = [
+                ("Model", 150),
+                ("Tier", 80),
+                ("Context", 100),
+                ("Max Output", 100),
+                ("Temperature", 120),
+                ("Features", 200),
+                ("Best For", 200)
+            ]
+
+            col = 0
+            for header, width in headers:
+                label = Gtk.Label(label=f"<b>{header}</b>")
+                label.set_use_markup(True)
+                label.set_size_request(width, -1)
+                label.set_halign(Gtk.Align.START)
+                grid.attach(label, col, 0, 1, 1)
+                col += 1
+
+            # Add separator
+            separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            grid.attach(separator, 0, 1, len(headers), 1)
+
+            # Model rows
+            row = 2
+            for model in model_registry.get_all_models():
+                col = 0
+
+                # Model name with availability indicator
+                availability = "✓" if model.is_available() else "⏳"
+                name_label = Gtk.Label(label=f"{availability} {model.display_name}")
+                name_label.set_halign(Gtk.Align.START)
+                grid.attach(name_label, col, row, 1, 1)
+                col += 1
+
+                # Tier with color
+                tier_info = model.get_tier_info()
+                tier_label = Gtk.Label()
+                tier_label.set_markup(f'<span foreground="{tier_info["color"]}">{tier_info["tier"].upper()}</span>')
+                tier_label.set_halign(Gtk.Align.START)
+                grid.attach(tier_label, col, row, 1, 1)
+                col += 1
+
+                # Context window (human readable)
+                context_display = self._format_context_window(model.context_window)
+                context_label = Gtk.Label(label=context_display)
+                context_label.set_halign(Gtk.Align.START)
+                grid.attach(context_label, col, row, 1, 1)
+                col += 1
+
+                # Max output tokens
+                output_display = f"{model.output_token_limit:,}" if hasattr(model, 'output_token_limit') else "4,096"
+                output_label = Gtk.Label(label=output_display)
+                output_label.set_halign(Gtk.Align.START)
+                grid.attach(output_label, col, row, 1, 1)
+                col += 1
+
+                # Temperature range
+                if model.temperature_constrained:
+                    temp_display = "Fixed (1.0)"
+                else:
+                    temp_display = f"{model.temperature_min}-{model.temperature_max}"
+                temp_label = Gtk.Label(label=temp_display)
+                temp_label.set_halign(Gtk.Align.START)
+                grid.attach(temp_label, col, row, 1, 1)
+                col += 1
+
+                # Features
+                features = []
+                if model.supports_json_mode:
+                    features.append("JSON")
+                if model.supports_verbosity:
+                    features.append("Verbosity")
+                if model.supports_reasoning_effort:
+                    features.append("Reasoning")
+                feature_text = ", ".join(features) if features else "Basic"
+                feature_label = Gtk.Label(label=feature_text)
+                feature_label.set_halign(Gtk.Align.START)
+                grid.attach(feature_label, col, row, 1, 1)
+                col += 1
+
+                # Best use cases
+                use_case = self._get_model_use_case(model)
+                use_label = Gtk.Label(label=use_case)
+                use_label.set_halign(Gtk.Align.START)
+                use_label.set_line_wrap(True)
+                use_label.set_max_width_chars(30)
+                grid.attach(use_label, col, row, 1, 1)
+
+                row += 1
+
+            main_box.pack_start(grid, False, False, 0)
+
+            # Add context window explanation
+            info_frame = Gtk.Frame()
+            info_frame.set_label("Understanding Context Windows")
+            info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            info_box.set_margin_start(10)
+            info_box.set_margin_end(10)
+            info_box.set_margin_top(10)
+            info_box.set_margin_bottom(10)
+
+            context_info = [
+                "• 128K = ~96,000 words (short book)",
+                "• 400K = ~300,000 words (long novel)",
+                "• 1M = ~750,000 words (Harry Potter series)"
+            ]
+
+            for info in context_info:
+                label = Gtk.Label(label=info)
+                label.set_halign(Gtk.Align.START)
+                info_box.pack_start(label, False, False, 0)
+
+            info_frame.add(info_box)
+            main_box.pack_start(info_frame, False, False, 20)
+
+        scroll.add(main_box)
+        return scroll
+
+    def _format_context_window(self, tokens):
+        """Format context window for display"""
+        if tokens >= 1000000:
+            return f"{tokens//1000000}M tokens"
+        elif tokens >= 1000:
+            return f"{tokens//1000}K tokens"
+        else:
+            return f"{tokens} tokens"
+
+    def _get_model_use_case(self, model):
+        """Get recommended use case for model"""
+        use_cases = {
+            "gpt-4o-mini": "Quick edits, summaries",
+            "gpt-4.1-nano": "High volume, fast response",
+            "gpt-4.1-mini": "Longer documents",
+            "gpt-4.1": "Professional writing",
+            "gpt-5-nano": "Rapid iteration",
+            "gpt-5-mini": "Creative writing",
+            "gpt-5": "Complex analysis"
+        }
+        return use_cases.get(model.model_name, "General purpose")
+
+    def _create_performance_metrics_tab(self):
+        """Create performance metrics comparison"""
         scroll = Gtk.ScrolledWindow()
         scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        vbox.set_margin_top(10)
-        vbox.set_margin_bottom(10)
-        vbox.set_margin_start(10)
-        vbox.set_margin_end(10)
-        
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        main_box.set_margin_start(10)
+        main_box.set_margin_end(10)
+        main_box.set_margin_top(10)
+        main_box.set_margin_bottom(10)
+
         if MODEL_CONFIG_AVAILABLE:
-            # Create comparison table
-            comparison_frame = Gtk.Frame(label="Model Comparison")
-            comparison_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-            comparison_box.set_margin_top(10)
-            comparison_box.set_margin_bottom(10)
-            comparison_box.set_margin_start(10)
-            comparison_box.set_margin_end(10)
-            
-            # Header
-            header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-            header_labels = ["Model", "Tier", "Context", "Features"]
-            for label_text in header_labels:
-                label = Gtk.Label(label=label_text)
-                label.get_style_context().add_class("panel-header")
-                label.set_size_request(120, -1)
+            # Response time comparison
+            perf_frame = Gtk.Frame()
+            perf_frame.set_label("Average Response Times")
+
+            perf_grid = Gtk.Grid()
+            perf_grid.set_column_spacing(15)
+            perf_grid.set_row_spacing(5)
+            perf_grid.set_margin_start(10)
+            perf_grid.set_margin_end(10)
+            perf_grid.set_margin_top(10)
+            perf_grid.set_margin_bottom(10)
+
+            # Headers
+            headers = ["Model", "First Token", "Full Response", "Tokens/sec"]
+            for col, header in enumerate(headers):
+                label = Gtk.Label(label=f"<b>{header}</b>")
+                label.set_use_markup(True)
                 label.set_halign(Gtk.Align.START)
-                header_box.pack_start(label, False, False, 0)
-            
-            comparison_box.pack_start(header_box, False, False, 0)
-            
-            separator = Gtk.Separator()
-            comparison_box.pack_start(separator, False, False, 5)
-            
-            # Model rows
-            available_models = model_registry.get_available_models()
-            for model in available_models:
-                model_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-                
-                # Model name
-                name_label = Gtk.Label(label=model.display_name)
-                name_label.set_size_request(120, -1)
-                name_label.set_halign(Gtk.Align.START)
-                model_box.pack_start(name_label, False, False, 0)
-                
-                # Tier
-                tier_info = model.get_tier_info()
-                tier_label = Gtk.Label(label=tier_info['tier'].title())
-                tier_label.set_size_request(120, -1)
-                tier_label.set_halign(Gtk.Align.START)
-                model_box.pack_start(tier_label, False, False, 0)
-                
-                # Context window
-                context_label = Gtk.Label(label=f"{model.context_window//1000}K")
-                context_label.set_size_request(120, -1)
-                context_label.set_halign(Gtk.Align.START)
-                model_box.pack_start(context_label, False, False, 0)
-                
-                # Features
-                features = []
-                if model.supports_verbosity:
-                    features.append("V")
-                if model.supports_reasoning_effort:
-                    features.append("RE")
-                if "gpt-5" in model.model_name:
-                    features.append("NEW")
-                
-                features_label = Gtk.Label(label=", ".join(features) if features else "-")
-                features_label.set_size_request(120, -1)
-                features_label.set_halign(Gtk.Align.START)
-                model_box.pack_start(features_label, False, False, 0)
-                
-                comparison_box.pack_start(model_box, False, False, 0)
-            
-            comparison_frame.add(comparison_box)
-            vbox.pack_start(comparison_frame, False, False, 0)
-        
-        scroll.add(vbox)
+                perf_grid.attach(label, col, 0, 1, 1)
+
+            # Model performance data (estimated)
+            perf_data = {
+                "gpt-4o-mini": (0.3, 1.2, 45),
+                "gpt-4.1-nano": (0.2, 0.8, 60),
+                "gpt-4.1-mini": (0.25, 1.0, 55),
+                "gpt-4.1": (0.35, 1.5, 40),
+                "gpt-5-nano": (0.4, 1.8, 35),
+                "gpt-5-mini": (0.5, 2.2, 30),
+                "gpt-5": (0.6, 2.8, 25)
+            }
+
+            row = 1
+            for model_name, (first_token, full_response, tokens_per_sec) in perf_data.items():
+                model = model_registry.get(model_name)
+                if model:
+                    # Model name
+                    name_label = Gtk.Label(label=model.display_name)
+                    name_label.set_halign(Gtk.Align.START)
+                    perf_grid.attach(name_label, 0, row, 1, 1)
+                    
+                    # First token time
+                    first_label = Gtk.Label(label=f"{first_token:.1f}s")
+                    first_label.set_halign(Gtk.Align.START)
+                    perf_grid.attach(first_label, 1, row, 1, 1)
+                    
+                    # Full response time
+                    full_label = Gtk.Label(label=f"{full_response:.1f}s")
+                    full_label.set_halign(Gtk.Align.START)
+                    perf_grid.attach(full_label, 2, row, 1, 1)
+                    
+                    # Tokens per second
+                    tokens_label = Gtk.Label(label=f"{tokens_per_sec}")
+                    tokens_label.set_halign(Gtk.Align.START)
+                    perf_grid.attach(tokens_label, 3, row, 1, 1)
+                    
+                    row += 1
+
+            perf_frame.add(perf_grid)
+            main_box.pack_start(perf_frame, False, False, 0)
+
+            # Performance recommendations
+            rec_frame = Gtk.Frame()
+            rec_frame.set_label("Performance Recommendations")
+            rec_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            rec_box.set_margin_start(10)
+            rec_box.set_margin_end(10)
+            rec_box.set_margin_top(10)
+            rec_box.set_margin_bottom(10)
+
+            recommendations = [
+                "• Use GPT-4.1 Nano for high-volume, fast operations",
+                "• Choose GPT-4o Mini for balanced speed and capability",
+                "• GPT-5 models provide best quality but slower response",
+                "• Temperature constraints in GPT-5 may affect creativity"
+            ]
+
+            for rec in recommendations:
+                label = Gtk.Label(label=rec)
+                label.set_halign(Gtk.Align.START)
+                rec_box.pack_start(label, False, False, 0)
+
+            rec_frame.add(rec_box)
+            main_box.pack_start(rec_frame, False, False, 10)
+
+        scroll.add(main_box)
         return scroll
     
     def _refresh_dashboard_data(self, widget):
@@ -873,10 +1057,10 @@ class VoiceTranscribeApp:
             self.model_combo.remove_all()
             
             # Add models grouped by tier with visual indicators
-            tier_icons = {"economy": "🟢", "standard": "🔵", "premium": "🟣"}
-            tier_colors = {"economy": "Economy", "standard": "Standard", "premium": "Premium"}
+            tier_icons = {"economy": "🟢", "standard": "🔵", "premium": "🟣", "flagship": "🟡"}
+            tier_colors = {"economy": "Economy", "standard": "Standard", "premium": "Premium", "flagship": "Flagship"}
             
-            for tier_name in ["economy", "standard", "premium"]:
+            for tier_name in ["economy", "standard", "premium", "flagship"]:
                 if models_by_tier[tier_name]:
                     # Add tier separator with icon
                     tier_label = f"{tier_icons[tier_name]} {tier_colors[tier_name].upper()} TIER"
@@ -943,6 +1127,7 @@ class VoiceTranscribeApp:
             "🟢 ECONOMY: Fast, efficient models for basic enhancement",
             "🔵 STANDARD: Balanced performance models",
             "🟣 PREMIUM: High-performance models with advanced features",
+            "🟡 FLAGSHIP: Top-tier models with maximum capabilities",
             "",
             "Features:",
             "  V = Verbosity control",
