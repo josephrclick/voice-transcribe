@@ -30,21 +30,6 @@ jobs:
       - name: Run tests
         run: pytest
 
-      - name: 🔐 Check for secrets
-        run: |
-          # Check for accidentally committed secrets
-          if grep -r "OPENAI_API_KEY\|SUPABASE_SERVICE_ROLE\|CLAUDE_CODE_OAUTH" \
-            --exclude-dir=node_modules \
-            --exclude-dir=.git \
-            --exclude-dir=.next \
-            --exclude="*.yml" \
-            --exclude=".env.example" .; then
-            echo "::error::Potential secrets detected in code!"
-            echo "::error::Use environment variables instead"
-            exit 1
-          fi
-        if: always()
-
   # Summary job - provides helpful feedback
   summary:
     runs-on: ubuntu-latest

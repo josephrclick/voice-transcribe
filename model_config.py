@@ -154,7 +154,25 @@ class ModelRegistry:
             deprecated=False
         ))
         
-        # Future model - GPT-4.1-mini (Q1 2026)
+        # GPT-4.1-nano - Available now! (Cheapest option)
+        self.register(ModelConfig(
+            model_name="gpt-4.1-nano",
+            display_name="GPT-4.1 Nano",
+            max_tokens_param="max_tokens",
+            max_tokens_value=500,
+            temperature=0.3,
+            temperature_min=0.0,
+            temperature_max=2.0,
+            cost_per_1k_input=0.00003,  # $0.03 per 1M input tokens (80% cheaper!)
+            cost_per_1k_output=0.00012,  # Estimated proportional reduction
+            supports_verbosity=True,
+            supports_json_mode=True,
+            context_window=128000,
+            deprecated=False,
+            available_from=None  # Available now!
+        ))
+        
+        # GPT-4.1-mini - Available now!
         self.register(ModelConfig(
             model_name="gpt-4.1-mini",
             display_name="GPT-4.1 Mini",
@@ -169,7 +187,25 @@ class ModelRegistry:
             supports_json_mode=True,
             context_window=256000,  # 2x context window
             deprecated=False,
-            available_from="2026-01-01T00:00:00"
+            available_from=None  # Available now!
+        ))
+        
+        # GPT-4.1 (standard) - Available now!
+        self.register(ModelConfig(
+            model_name="gpt-4.1",
+            display_name="GPT-4.1",
+            max_tokens_param="max_tokens",
+            max_tokens_value=2000,
+            temperature=0.3,
+            temperature_min=0.0,
+            temperature_max=2.0,
+            cost_per_1k_input=0.00015,  # Same as GPT-4o-mini but with better performance
+            cost_per_1k_output=0.0006,
+            supports_verbosity=True,
+            supports_json_mode=True,
+            context_window=512000,  # 4x context window
+            deprecated=False,
+            available_from=None  # Available now!
         ))
         
         # Future model - GPT-5-nano (Mid 2026)

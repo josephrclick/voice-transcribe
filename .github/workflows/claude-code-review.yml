@@ -39,25 +39,16 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: "claude-opus-4-1-20250805"
+          direct_prompt: |
+            Review this PR for a speeh to text transcriber and AI enhancer tool for:
+            - Python best practices
+            - For APIs, focus on security, data validation and error handling
+            - For tests, focus on coverage, edge cases and test quality
+            - Potential security issues with API keys
 
-          # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4.1)
-        model:
-          "claude-opus-4-1-20250805"
-
-          # Direct prompt for automated review (no @claude mention needed)
-        direct_prompt: |
-          Review this PR for a speeh to text transcriber and AI enhancer tool for:
-          - Python best practices
-          - For APIs, focus on security, data validation and error handling
-          - For tests, focus on coverage, edge cases and test quality
-          - Potential security issues with API keys
-
-          Be constructive but thorough. This is a portfolio project. Skip minor style issues unless they impact readability.
-
-          # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
-
-        use_sticky_comment:
-          true
+            Be constructive but thorough. This is a portfolio project. Skip minor style issues unless they impact readability.
+          use_sticky_comment: true
 
           # Optional: Customize review based on file types
           # direct_prompt: |

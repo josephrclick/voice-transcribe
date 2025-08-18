@@ -33,7 +33,7 @@ _Left: Your actual words (with copy button). Right: What you meant to say (with 
 
 - **GTK 3** - Because native Linux apps deserve love
 - **Deepgram Nova-3** - The speech recognition that actually understands mumbling
-- **OpenAI GPT-4o-mini** - The prompt whisperer (for Prompt Mode)
+- **OpenAI GPT-4.1 Family** - The prompt whisperers (GPT-4.1-nano/mini/standard)
 - **Python** - The language of "let's just ship it"
 
 ## Installation
@@ -135,8 +135,10 @@ It's like having a tiny prompt engineer in your computer that takes your stream-
    - **Balanced**: The Goldilocks zone of prompts
    - **Detailed**: For when you need the LLM to really get it
 3. **Select your AI model** (NEW!):
-   - **GPT-4o Mini**: Current model ($0.15/1K tokens)
-   - **GPT-4.1 Mini**: Coming Q1 2026 - 53% cheaper! ($0.07/1K tokens)
+   - **GPT-4o Mini**: Original model ($0.15/1K tokens)
+   - **GPT-4.1 Nano**: Ultra budget-friendly - 80% cheaper! ($0.03/1K tokens)
+   - **GPT-4.1 Mini**: Best value - 53% cheaper! ($0.07/1K tokens)
+   - **GPT-4.1**: Premium performance, same price as GPT-4o-mini ($0.15/1K tokens)
    - Model selection persists between sessions
    - Automatic fallback if selected model unavailable
 4. **Speak naturally** - "um, so like, I need a function that, you know, reads CSVs and stuff"
