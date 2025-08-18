@@ -251,7 +251,7 @@ class ModelRegistry:
             model_name="gpt-5-nano",
             display_name="GPT-5 Nano",
             max_tokens_param="max_completion_tokens",  # Breaking change
-            max_tokens_value=300,  # GPT-5 needs at least 200 tokens
+            max_tokens_value=3000,  # Increased to account for reasoning tokens
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint
@@ -275,7 +275,7 @@ class ModelRegistry:
             model_name="gpt-5-mini",
             display_name="GPT-5 Mini",
             max_tokens_param="max_completion_tokens",  # Breaking change
-            max_tokens_value=500,
+            max_tokens_value=4000,
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint
@@ -299,7 +299,7 @@ class ModelRegistry:
             model_name="gpt-5",
             display_name="GPT-5",
             max_tokens_param="max_completion_tokens",  # Breaking change
-            max_tokens_value=1000,
+            max_tokens_value=5000,
             temperature=1.0,  # Fixed at 1.0 for GPT-5
             temperature_min=1.0,  # GPT-5 constraint
             temperature_max=1.0,  # GPT-5 constraint

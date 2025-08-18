@@ -113,10 +113,13 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
         ]
         
         # Prepare additional parameters
+        # Use model's configured max_tokens_value (increased for GPT-5 to account for reasoning tokens)
+        max_tokens = model_config.max_tokens_value
+        
         call_params = {
             "model_name": model_name,
             "messages": messages,
-            "max_tokens": 1000,  # Will be mapped to correct parameter
+            "max_tokens": max_tokens,  # Will be mapped to correct parameter
             "temperature": 0.3,  # Will be constrained to model limits
             "style": style  # Pass style for GPT-5 temperature constraint handling
         }
