@@ -30,7 +30,12 @@ Since this is a desktop audio app, manual smoke testing is essential:
 1. **Basic Flow**: Launch → record 3s → verify transcript and word count
 2. **Prompt Mode**: Toggle via checkbox or Ctrl+Shift+Q → verify enhancement or fallback
 3. **Copy/Paste**: Test both copy buttons → verify clipboard and auto-paste (X11/Wayland)
-4. **Edge Cases**: Network failures, API timeouts, invalid audio input
+4. **Dashboard Access**: Test Ctrl+D shortcut → verify model specifications display correctly
+5. **Model Selection**: Test all tiers (Economy/Standard/Flagship) → verify fallback chains work
+6. **Performance Metrics**: Verify dashboard shows accurate context windows and output limits
+7. **GPT-5 Features**: Test reasoning effort and verbosity parameters → verify no API errors
+8. **Tier Indicators**: Verify visual tier badges display correctly in UI
+9. **Edge Cases**: Network failures, API timeouts, invalid audio input
 
 ### Unit Tests (Supplementary)
 
