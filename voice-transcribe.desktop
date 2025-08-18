@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Voice Transcribe v3.3
+Comment=AI-enhanced speech to text with model experimentation
+Exec=/home/joe/dev/projects/voice-transcribe-dev/voice-transcribe
+Icon=/home/joe/dev/projects/voice-transcribe-dev/images/icon.png
+Terminal=false
+Categories=Utility;Audio;
+StartupNotify=true

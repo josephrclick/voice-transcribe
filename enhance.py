@@ -6,15 +6,26 @@ Handles OpenAI API integration for improving transcripts as LLM prompts
 
 import os
 import time
+import logging
 from typing import Optional, Tuple
 import openai
 from dotenv import load_dotenv
+from model_config import model_registry, ModelAdapter
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Set up logging
+logger = logging.getLogger(__name__)
+
+# Initialize OpenAI client if API key is available
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    raise ImportError("OPENAI_API_KEY not set")
+client = openai.OpenAI(api_key=api_key)
+
+# Initialize model adapter for dynamic parameter handling
+model_adapter = ModelAdapter(client)
 
 # Enhancement style prompts
 ENHANCEMENT_PROMPTS = {
@@ -42,13 +53,15 @@ def estimate_tokens(text: str) -> int:
     """Rough estimate of token count (1 token ≈ 4 characters)"""
     return len(text) // 4
 
-def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[str], Optional[str]]:
+def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional[str] = None, model_name: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Enhance a voice transcript into an optimized LLM prompt
     
     Args:
         transcript: Raw transcript from Deepgram
         style: Enhancement style ('concise', 'balanced', 'detailed')
+        model_key: Model key/ID from UI selection (preferred over model_name)
+        model_name: Specific model to use (deprecated, use model_key)
     
     Returns:
         Tuple of (enhanced_prompt, error_message)
@@ -67,20 +80,97 @@ def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[s
     if estimate_tokens(transcript) > 3000:
         return None, "Transcript too long for enhancement"
     
+    # Get model configuration (prefer model_key over model_name)
+    if model_key:
+        model_config = model_registry.get(model_key)
+        if not model_config:
+            logger.warning(f"Model {model_key} not found, using default")
+            model_config = model_registry.get_default_model()
+            model_name = model_config.model_name
+        else:
+            model_name = model_key
+    elif model_name:
+        model_config = model_registry.get(model_name)
+        if not model_config:
+            logger.warning(f"Model {model_name} not found, using default")
+            model_config = model_registry.get_default_model()
+            model_name = model_config.model_name
+    else:
+        model_config = model_registry.get_default_model()
+        model_name = model_config.model_name
+    
+    # Check if model is available
+    if not model_config.is_available():
+        logger.info(f"Model {model_name} not available, using default")
+        model_config = model_registry.get_default_model()
+        model_name = model_config.model_name
+    
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": ENHANCEMENT_PROMPTS[style]},
-                {"role": "user", "content": transcript}
-            ],
-            max_tokens=1000,
-            temperature=0.3,  # Lower temperature for consistency
-            timeout=15.0  # 15 second timeout for longer transcriptions
-        )
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": ENHANCEMENT_PROMPTS[style]},
+            {"role": "user", "content": transcript}
+        ]
         
+        # Prepare additional parameters
+        # Use model's configured max_tokens_value (increased for GPT-5 to account for reasoning tokens)
+        max_tokens = model_config.max_tokens_value
+        
+        call_params = {
+            "model_name": model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,  # Will be mapped to correct parameter
+            "temperature": 0.3,  # Will be constrained to model limits
+            "style": style  # Pass style for GPT-5 temperature constraint handling
+        }
+        
+        # GPT-5 verbosity bug workaround:
+        # GPT-5 has a bug where ANY verbosity parameter combined with reasoning_effort
+        # causes empty content to be returned. We must omit verbosity entirely.
+        # GPT-4.1 models also do NOT support verbosity parameter at all.
+        # So we skip verbosity for both GPT-4.1 and GPT-5 models.
+        if model_config.supports_verbosity and "gpt-4.1" not in model_config.model_name and "gpt-5" not in model_config.model_name:
+            # Only add verbosity for future models that properly support it
+            verbosity_map = {
+                "concise": "low",
+                "balanced": "medium",
+                "detailed": "high"
+            }
+            call_params["verbosity"] = verbosity_map.get(style, "medium")
+        
+        # Add reasoning_effort parameter for GPT-5 models
+        # IMPORTANT: GPT-5 has a bug where reasoning_effort='medium' or 'high' 
+        # causes empty content to be returned. We must use 'low' only.
+        if model_config.supports_reasoning_effort:
+            # GPT-5 bug workaround: always use 'low' reasoning_effort
+            call_params["reasoning_effort"] = "low"
+            logger.info("Using reasoning_effort='low' for GPT-5 (API bug workaround)")
+            
+            # For GPT-5 models with temperature constraints, use fixed temperature
+            if model_config.temperature_constrained:
+                call_params["temperature"] = 1.0  # GPT-5 only accepts temperature=1.0
+                logger.info(f"Using fixed temperature 1.0 for GPT-5 model (API constraint)")
+        
+        # Use model adapter for API call with automatic fallback
+        response = model_adapter.call_with_fallback(**call_params)
+        
+        if not response:
+            return None, "Enhancement failed - API call returned no response"
+        
+        # Extract content from response
         enhanced = response.choices[0].message.content.strip()
+        
+        # Log token usage and cost
+        if hasattr(response, 'usage'):
+            cost = model_config.estimate_cost(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens
+            )
+            tier_info = model_config.get_tier_info()
+            logger.info(
+                f"Enhancement completed - Model: {model_config.display_name} ({tier_info['tier']}), "
+                f"Style: {style}, Cost: ${cost:.4f}"
+            )
         
         # Sanity check - enhancement shouldn't be empty or too short
         if not enhanced or len(enhanced) < 10:
@@ -93,13 +183,92 @@ def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[s
     except openai.APIConnectionError:
         return None, "Connection error - check internet"
     except openai.APIError as e:
+        # Check for parameter-related errors and attempt migration
+        error_str = str(e).lower()
+        if any(param in error_str for param in ["max_tokens", "max_completion_tokens", "reasoning_effort", "verbosity"]):
+            logger.warning(f"Parameter error detected, model adapter will handle fallback: {e}")
         return None, f"OpenAI API error: {str(e)}"
     except Exception as e:
+        logger.error(f"Unexpected error in enhancement: {e}")
         return None, f"Unexpected error: {str(e)}"
 
 def get_enhancement_styles():
     """Return available enhancement styles for UI"""
     return ["concise", "balanced", "detailed"]
+
+def get_available_models():
+    """Return currently available models for UI"""
+    models = model_registry.get_available_models()
+    return [(m.model_name, m.display_name) for m in models]
+
+def get_all_models():
+    """Return all models (including future ones) for UI"""
+    models = model_registry.get_all_models()
+    model_info = []
+    for m in models:
+        status = "Available" if m.is_available() else "Coming Soon"
+        if m.deprecated:
+            status = "Deprecated"
+        
+        tier_info = m.get_tier_info()
+        model_info.append({
+            "name": m.model_name,
+            "display": m.display_name,
+            "status": status,
+            "available_from": m.available_from,
+            "tier": tier_info["tier"],
+            "tier_color": tier_info["color"],
+            "cost_per_1k_input": m.cost_per_1k_input,
+            "cost_per_1k_output": m.cost_per_1k_output,
+            "supports_gpt5_features": m.supports_reasoning_effort,
+            "context_window": m.context_window
+        })
+    return model_info
+
+def get_models_by_tier():
+    """Return models grouped by tier for UI"""
+    models = model_registry.get_available_models()
+    by_tier = {"economy": [], "standard": [], "premium": [], "flagship": []}
+    
+    for model in models:
+        tier_info = model.get_tier_info()
+        by_tier[model.tier].append({
+            "name": model.model_name,
+            "display": model.display_name,
+            "cost_input": model.cost_per_1k_input,
+            "cost_output": model.cost_per_1k_output,
+            "features": {
+                "verbosity": model.supports_verbosity,
+                "reasoning_effort": model.supports_reasoning_effort,
+                "json_mode": model.supports_json_mode
+            }
+        })
+    
+    return by_tier
+
+def get_usage_statistics():
+    """Get usage statistics from the model adapter"""
+    return model_adapter.get_usage_stats()
+
+def reset_usage_statistics():
+    """Reset usage statistics"""
+    model_adapter.reset_usage_stats()
+    logger.info("Enhancement usage statistics reset")
+
+def estimate_enhancement_cost(transcript: str, model_name: str = None) -> float:
+    """Estimate cost for enhancing a transcript with a specific model"""
+    if not model_name:
+        model_name = "gpt-4o-mini"
+    
+    config = model_registry.get(model_name)
+    if not config:
+        return 0.0
+    
+    # Estimate tokens (rough approximation)
+    input_tokens = estimate_tokens(transcript) + 50  # Add system prompt tokens
+    output_tokens = min(input_tokens * 1.5, config.max_tokens_value)  # Estimate output
+    
+    return config.estimate_cost(input_tokens, output_tokens)
 
 # Quick test function
 if __name__ == "__main__":

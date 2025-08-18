@@ -1,7 +1,9 @@
 #!/bin/bash
 # Install Voice Transcribe as a desktop application
+# Optional: install 'wtype' for Wayland auto-paste support (sudo apt install wtype)
 
 echo "Installing Voice Transcribe desktop application..."
+echo "Tip: For auto-paste on Wayland, install 'wtype'"
 
 # Get the current directory
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
