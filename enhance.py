@@ -6,18 +6,26 @@ Handles OpenAI API integration for improving transcripts as LLM prompts
 
 import os
 import time
+import logging
 from typing import Optional, Tuple
 import openai
 from dotenv import load_dotenv
+from model_config import model_registry, ModelAdapter
 
 # Load environment variables
 load_dotenv()
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client if API key is available
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ImportError("OPENAI_API_KEY not set")
 client = openai.OpenAI(api_key=api_key)
+
+# Initialize model adapter for dynamic parameter handling
+model_adapter = ModelAdapter(client)
 
 # Enhancement style prompts
 ENHANCEMENT_PROMPTS = {
@@ -45,13 +53,14 @@ def estimate_tokens(text: str) -> int:
     """Rough estimate of token count (1 token ≈ 4 characters)"""
     return len(text) // 4
 
-def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[str], Optional[str]]:
+def enhance_prompt(transcript: str, style: str = "balanced", model_name: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Enhance a voice transcript into an optimized LLM prompt
     
     Args:
         transcript: Raw transcript from Deepgram
         style: Enhancement style ('concise', 'balanced', 'detailed')
+        model_name: Specific model to use (defaults to current default model)
     
     Returns:
         Tuple of (enhanced_prompt, error_message)
@@ -70,20 +79,50 @@ def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[s
     if estimate_tokens(transcript) > 3000:
         return None, "Transcript too long for enhancement"
     
+    # Get model configuration
+    if model_name is None:
+        model_config = model_registry.get_default_model()
+        model_name = model_config.model_name
+    else:
+        model_config = model_registry.get(model_name)
+        if not model_config:
+            logger.warning(f"Model {model_name} not found, using default")
+            model_config = model_registry.get_default_model()
+            model_name = model_config.model_name
+    
+    # Check if model is available
+    if not model_config.is_available():
+        logger.info(f"Model {model_name} not available, using default")
+        model_config = model_registry.get_default_model()
+        model_name = model_config.model_name
+    
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": ENHANCEMENT_PROMPTS[style]},
-                {"role": "user", "content": transcript}
-            ],
-            max_tokens=1000,
-            temperature=0.3,  # Lower temperature for consistency
-            timeout=15.0  # 15 second timeout for longer transcriptions
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": ENHANCEMENT_PROMPTS[style]},
+            {"role": "user", "content": transcript}
+        ]
+        
+        # Use model adapter for API call with automatic fallback
+        response = model_adapter.call_with_fallback(
+            model_name=model_name,
+            messages=messages,
+            max_tokens=1000,  # Will be mapped to correct parameter
+            temperature=0.3  # Will be constrained to model limits
         )
         
+        if not response:
+            return None, "Enhancement failed - API call returned no response"
+        
         enhanced = response.choices[0].message.content.strip()
+        
+        # Log token usage and cost
+        if hasattr(response, 'usage'):
+            cost = model_config.estimate_cost(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens
+            )
+            logger.info(f"Enhancement completed - Model: {model_config.display_name}, Cost: ${cost:.4f}")
         
         # Sanity check - enhancement shouldn't be empty or too short
         if not enhanced or len(enhanced) < 10:
@@ -96,13 +135,38 @@ def enhance_prompt(transcript: str, style: str = "balanced") -> Tuple[Optional[s
     except openai.APIConnectionError:
         return None, "Connection error - check internet"
     except openai.APIError as e:
+        # Check for parameter-related errors and attempt migration
+        if "max_tokens" in str(e) or "max_completion_tokens" in str(e):
+            logger.warning(f"Parameter error detected, model registry may need update: {e}")
         return None, f"OpenAI API error: {str(e)}"
     except Exception as e:
+        logger.error(f"Unexpected error in enhancement: {e}")
         return None, f"Unexpected error: {str(e)}"
 
 def get_enhancement_styles():
     """Return available enhancement styles for UI"""
     return ["concise", "balanced", "detailed"]
+
+def get_available_models():
+    """Return currently available models for UI"""
+    models = model_registry.get_available_models()
+    return [(m.model_name, m.display_name) for m in models]
+
+def get_all_models():
+    """Return all models (including future ones) for UI"""
+    models = model_registry.get_all_models()
+    model_info = []
+    for m in models:
+        status = "Available" if m.is_available() else "Coming Soon"
+        if m.deprecated:
+            status = "Deprecated"
+        model_info.append({
+            "name": m.model_name,
+            "display": m.display_name,
+            "status": status,
+            "available_from": m.available_from
+        })
+    return model_info
 
 # Quick test function
 if __name__ == "__main__":
