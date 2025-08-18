@@ -2,161 +2,55 @@
 
 ## Git Workflow Automation
 
-**IMPORTANT**: This project uses automated Git workflows defined in `.claude/rules.md`
+This project uses automated Git workflows. When you see these trigger phrases, follow the automated workflow in `.claude/rules.md`:
 
-When the user says any of these trigger phrases:
+- **"git-start [description]"** - Start new feature branch
+- **"git-review"** - Finalize work and create PR
+- **"save" or "checkpoint"** - Quick WIP commit and push
+- **"status"** - Show PR and CI status
 
-- "git-start [any description]" - Begins new feature branch and development
-- "git-review" - Finalizes work and creates PR for review
-- "save" or "checkpoint" - Quick WIP commit and push
-- "status" - Shows PR and CI status
+**IMPORTANT**: Always read `.claude/rules.md` first for complete workflow rules, safety measures, and recovery commands.
 
-You MUST:
+## Essential Dev Commands
 
-1. Read `.claude/rules.md` for complete workflow rules
-2. Follow the automated workflow exactly as specified
-3. Create feature branches, make commits, and manage Git operations automatically
-4. Use conventional commit messages (feat:, fix:, wip:, etc.)
-
-See `.claude/rules.md` for full workflow details, safety rules, and recovery commands.
-
-## Development Commands
-
-### Setup
-
-See `README.md` for installation details
-
-### Running the Application
+### Quick Start
 
 ```bash
-# Activate virtual environment and run
-source venv/bin/activate && python main.py
-
-# Or use the launcher script (auto-activates venv)
+# Run with auto-venv activation
 ./voice-transcribe
 
-# Toggle recording mode (for keyboard shortcut integration)
+# Or manually
+source venv/bin/activate && python main.py
+
+# Toggle mode for keyboard shortcuts
 ./voice-transcribe toggle
 ```
 
 ### Testing
 
 ```bash
-# Run unit tests for Deepgram service
+# Unit tests
 python -m pytest tests/test_deepgram_service.py
+
+# Manual smoke test checklist:
+# 1. Record 3s audio → verify transcript + word count
+# 2. Toggle Prompt Mode → verify enhancement or fallback
+# 3. Test both copy buttons + auto-paste
 ```
 
-## Architecture Overview
+### Configuration
 
-### Core Components
+- **API Keys**: Add to `.env` (never commit)
+  ```
+  DEEPGRAM_API_KEY=your_key_here
+  OPENAI_API_KEY=sk-your_key_here  # Optional for Prompt Mode
+  ```
+- **Preferences**: Auto-saved to `config.json` (don't edit manually)
 
-1. **VoiceTranscribeApp** (`main.py`): Main GTK application orchestrator
-   - GTK3 window with always-on-top behavior
-   - Dual-panel UI: original transcript (left) and enhanced version (right)
-   - Real-time recording stats (duration, word count)
-   - Keyboard shortcuts: Ctrl+Q (record), Ctrl+Shift+Q (Prompt Mode)
+## Threading Safety Notes
 
-2. **DeepgramService** (`deepgram_service.py`): WebSocket transcription service
-   - Manages live WebSocket connection with exponential backoff
-   - Handles streaming audio at 16kHz sample rate
-   - Processes partial and final transcripts
-   - Auto-reconnection on connection loss (max 5 retries)
+- All UI updates MUST use `GLib.idle_add()` when called from worker threads
+- Audio/transcription runs in background threads to avoid blocking GTK main loop
+- Enhancement failures should not affect original transcript availability
 
-3. **Enhancement Module** (`enhance.py`): OpenAI-powered prompt optimization
-   - Three styles: concise, balanced, detailed
-   - Token estimation and rate limiting
-   - Graceful fallback on API failures
-   - Preview text shown during enhancement
-
-### Threading Architecture
-
-The app uses multiple threads to maintain UI responsiveness:
-
-```
-Main Thread (GTK)
-├── UI updates via GLib.idle_add()
-└── Event handling
-
-Recording Thread
-├── sounddevice audio capture (16kHz, float32)
-└── 100ms chunks accumulation
-
-Transcription Thread
-├── WAV conversion with headers
-├── Deepgram API calls
-└── Result processing
-
-Enhancement Thread
-├── OpenAI API calls
-└── Prompt optimization
-
-Paste Thread
-├── xdotool (X11)
-└── wtype (Wayland)
-```
-
-### Key Design Patterns
-
-1. **Thread Safety**: All UI updates use `GLib.idle_add()` to marshal calls to GTK thread
-2. **Graceful Degradation**: Features fail independently (e.g., enhancement fails → original still works)
-3. **Configuration Persistence**: UI preferences saved to `config.json`
-4. **Audio Pipeline**: Record → Buffer → WAV conversion → Transcription → Enhancement (optional)
-
-### External Dependencies & APIs
-
-- **Deepgram Nova-3**: Speech recognition (requires API key)
-- **OpenAI GPT-4o-mini**: Prompt enhancement (optional, requires API key)
-- **System Audio**: PulseAudio/PipeWire via sounddevice
-- **Clipboard**: pyperclip with platform-specific backends
-- **Auto-paste**: xdotool (X11), wtype (Wayland)
-
-### File Structure
-
-```
-voice-transcribe/
-├── main.py                 # Main GTK application
-├── deepgram_service.py     # WebSocket transcription service
-├── enhance.py              # OpenAI prompt enhancement
-├── voice-transcribe        # Launcher script with venv activation
-├── install-desktop-app.sh  # Desktop integration installer
-├── config.json             # User preferences (auto-generated)
-├── requirements.txt        # Python dependencies
-├── tests/
-│   └── test_deepgram_service.py  # Unit tests
-└── images/
-    ├── icon.svg/png        # App icons
-    └── ss1-v32.png         # Screenshots
-```
-
-### Configuration Files
-
-- `.env`: API keys (DEEPGRAM_API_KEY, OPENAI_API_KEY)
-- `config.json`: UI preferences (prompt_mode_enabled, enhancement_style, history settings)
-- Never commit `.env` or modify `config.json` manually
-
-## AI Team Configuration (autogenerated by team-configurator, 2025-08-17)
-
-**Important: YOU MUST USE subagents when available for the task.**
-
-### Detected Technology Stack
-
-- **Language**: Python 3.12+ with virtual environment setup
-- **UI Framework**: GTK3 with PyGObject bindings
-- **Audio Processing**: sounddevice, numpy for 16kHz real-time capture
-- **External APIs**: Deepgram Nova-3 (speech recognition), OpenAI GPT-4o-mini (enhancement)
-- **Threading**: Multi-threaded architecture with GTK main thread safety
-- **System Integration**: Desktop app with keyboard shortcuts, clipboard automation
-- **Testing**: pytest for unit tests
-- **Packaging**: requirements.txt, shell scripts for deployment
-
-### Team Assignments
-
-| Task                              | Agent                      | Notes                                                         |
-| --------------------------------- | -------------------------- | ------------------------------------------------------------- |
-| Python Development & Optimization | `python-pro`               | Expert for GTK3, threading, audio processing, API integration |
-| Code Quality & Security Review    | `code-reviewer`            | Required before all merges; security-aware for API keys       |
-| Performance & Scaling Issues      | `performance-optimizer`    | Audio latency, WebSocket efficiency, memory optimization      |
-| API Design & Integration          | `api-architect`            | Deepgram/OpenAI integration patterns, error handling          |
-| UI/UX Design & GTK3 Interface     | `ui-designer`              | GTK3 layouts, accessibility, desktop integration              |
-| Documentation & User Guides       | `documentation-specialist` | Setup guides, architecture docs, troubleshooting              |
-| Developer Experience & Tooling    | `dx-optimizer`             | Build scripts, testing workflows, deployment automation       |
+For complete setup, architecture details, and user features, see `README.md`.
