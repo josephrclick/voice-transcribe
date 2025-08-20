@@ -21,17 +21,50 @@ class DeepgramService:
         on_transcript: Callable[[str, bool], None],
         on_reconnect: Optional[Callable[[int], None]] = None,
         max_retries: int = 5,
+        punctuation_sensitivity: str = "balanced",
+        endpointing_ms: int = 400,
     ) -> None:
         self.client = client
         self.on_transcript = on_transcript
         self.on_reconnect = on_reconnect
         self.max_retries = max_retries
+        self.punctuation_sensitivity = punctuation_sensitivity
+        self.endpointing_ms = endpointing_ms
         self.ws = None
         self._closing = False
 
     # ------------------------------------------------------------------
     # Connection management
     # ------------------------------------------------------------------
+    def _get_live_options(self) -> LiveOptions:
+        """Generate Deepgram LiveOptions based on user preferences."""
+        
+        # Punctuation mapping
+        punctuation_config = {
+            "off": {"punctuate": False, "smart_format": False},
+            "minimal": {"punctuate": True, "smart_format": False},
+            "balanced": {"punctuate": True, "smart_format": True},
+            "aggressive": {"punctuate": True, "smart_format": True, "diarize": True}
+        }
+        
+        config = punctuation_config.get(
+            self.punctuation_sensitivity, 
+            punctuation_config["balanced"]
+        )
+        
+        return LiveOptions(
+            model="nova-3",
+            language="en-US",
+            endpointing=self.endpointing_ms,  # Key fix: increase from 10ms default
+            utterance_end_ms=1000,           # Detect longer pauses
+            vad_events=True,                 # Enable VAD
+            interim_results=True,            # Required for utterance detection
+            **config,                        # Apply punctuation settings
+            encoding="linear16",
+            sample_rate=16000,
+            channels=1,
+        )
+
     def start(self) -> None:
         """Start the WebSocket connection in a background thread."""
 
@@ -49,15 +82,7 @@ class DeepgramService:
                 )
                 ws.on(LiveTranscriptionEvents.Close, self._handle_close)
 
-                options = LiveOptions(
-                    model="nova-3",
-                    language="en-US",
-                    punctuate=True,
-                    smart_format=True,
-                    encoding="linear16",
-                    sample_rate=16000,
-                    channels=1,
-                )
+                options = self._get_live_options()
                 logging.debug("Starting WebSocket with options: %s", options)
                 ws.start(options)
                 self.ws = ws
