@@ -10,6 +10,8 @@
 2. `git checkout -b feat/[description-kebab-case]`
 3. `git push -u origin feat/[description-kebab-case]`
 
+**IMPORTANT:** git-start ONLY creates the branch and begins work. Do NOT create pull requests during git-start. Pull requests should only be created when user explicitly triggers "git-review".
+
 ### Quick Saves
 
 **"save" or "checkpoint"**
@@ -18,11 +20,19 @@
 
 ### Finishing Work
 
-**"git-review"**
+**"git-review"** or **"git-review #[issue-number]"**
 
 1. `git add . && git commit -m "feat: complete [feature-name]"`
 2. `git push`
 3. `gh pr create --base dev --fill --web`
+4. If issue number provided, add "Closes #[issue-number]" to PR description
+
+**IMPORTANT:**
+
+- git-review is the ONLY command that should create pull requests
+- This command is only executed when user explicitly says "git-review" - never automatically after git-start or other commands
+- If user provides issue number (e.g., "git-review #35"), include "Closes #[issue-number]" at the end of the PR description
+- If unsure of the proper issue number to close, skip the "Closes" phrase entirely
 
 ### Status Checks
 
