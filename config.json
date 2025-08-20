@@ -54,6 +54,15 @@
   },
   "deepgram_config": {
     "punctuation_sensitivity": "balanced",
-    "endpointing_ms": 400
+    "endpointing_ms": 604
+  },
+  "punctuation_processing": {
+    "enabled": true,
+    "merge_threshold_ms": 800,
+    "min_sentence_length": 3,
+    "fragment_sensitivity": "balanced"
+  },
+  "fragment_processing": {
+    "enabled": true
   }
 }
