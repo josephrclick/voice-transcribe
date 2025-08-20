@@ -306,7 +306,8 @@ def estimate_tokens_with_fragments(text: str) -> int:
     
     return base_tokens + overhead
 
-def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional[str] = None, model_name: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional[str] = None, model_name: Optional[str] = None, 
+                  fragment_processing_config: Optional[Dict] = None) -> Tuple[Optional[str], Optional[str]]:
     """
     Enhance a voice transcript into an optimized LLM prompt
     
@@ -315,6 +316,7 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
         style: Enhancement style ('concise', 'balanced', 'detailed')
         model_key: Model key/ID from UI selection (preferred over model_name)
         model_name: Specific model to use (deprecated, use model_key)
+        fragment_processing_config: Optional config for fragment processing
     
     Returns:
         Tuple of (enhanced_prompt, error_message)
@@ -329,9 +331,19 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
     if style not in ENHANCEMENT_PROMPTS:
         style = "balanced"
     
-    # Pre-process fragments if detected
-    fragment_processor = FragmentProcessor()
-    processed_transcript = fragment_processor.reconstruct_fragments(transcript)
+    # Get fragment processing configuration
+    if fragment_processing_config is None:
+        fragment_processing_config = {}
+    
+    # Check if fragment processing is enabled (default: True)
+    fragment_processing_enabled = fragment_processing_config.get("enabled", True)
+    
+    # Pre-process fragments if enabled
+    if fragment_processing_enabled:
+        fragment_processor = FragmentProcessor()
+        processed_transcript = fragment_processor.reconstruct_fragments(transcript)
+    else:
+        processed_transcript = transcript
     
     # Log fragment processing for analytics
     if processed_transcript != transcript:
