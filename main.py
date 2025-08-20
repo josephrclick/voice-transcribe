@@ -1247,6 +1247,9 @@ class VoiceTranscribeApp:
             "min_sentence_length": 3,
             "fragment_sensitivity": "balanced"
         })
+        self.config["fragment_processing"] = getattr(self, "fragment_processing_config", {
+            "enabled": True
+        })
         
         # Save the config
         try:
@@ -1287,6 +1290,10 @@ class VoiceTranscribeApp:
                     "min_sentence_length": 3,
                     "fragment_sensitivity": "balanced"
                 })
+                # Load fragment processing configuration
+                self.fragment_processing_config = prefs.get("fragment_processing", {
+                    "enabled": True
+                })
         except (OSError, json.JSONDecodeError) as e:
             logging.error("Failed to load preferences: %s", e)
             print("Unable to load preferences. Defaults will be used.")
@@ -1310,6 +1317,9 @@ class VoiceTranscribeApp:
                 "min_sentence_length": 3,
                 "fragment_sensitivity": "balanced"
             }
+            self.fragment_processing_config = {
+                "enabled": True
+            }
             # Also set default config dictionary
             self.config = {
                 "selected_model": self.selected_model,
@@ -1319,7 +1329,8 @@ class VoiceTranscribeApp:
                 "history_enabled": self.history_enabled,
                 "history_limit": self.history_limit,
                 "deepgram_config": self.deepgram_config,
-                "punctuation_processing": self.punctuation_config
+                "punctuation_processing": self.punctuation_config,
+                "fragment_processing": self.fragment_processing_config
             }
         
         # Initialize punctuation processor
@@ -1778,7 +1789,16 @@ class VoiceTranscribeApp:
         """Enhance transcript in background"""
         # Get the selected model if available
         model_key = self.config.get("selected_model", "gpt-4o-mini") if MODEL_CONFIG_AVAILABLE else None
-        enhanced, error = enhance_prompt(transcript, self.enhancement_style, model_key=model_key)
+        
+        # Get fragment processing configuration
+        fragment_config = self.config.get("fragment_processing", {"enabled": True})
+        
+        enhanced, error = enhance_prompt(
+            transcript, 
+            self.enhancement_style, 
+            model_key=model_key,
+            fragment_processing_config=fragment_config
+        )
         
         if enhanced:
             self.enhanced_text = enhanced
