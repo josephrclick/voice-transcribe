@@ -22,6 +22,7 @@ from deepgram import (
 )
 from deepgram_service import DeepgramService
 from punctuation_processor import PunctuationProcessor, FragmentCandidate
+from punctuation_controls import PunctuationControlsWidget
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 
@@ -398,7 +399,14 @@ class VoiceTranscribeApp:
         # Center spacer
         header_box.pack_start(Gtk.Label(), True, True, 0)
         
-        # Right side: Prompt Mode controls
+        # Right side: Controls container
+        right_controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        
+        # Punctuation controls (always visible)
+        self.punctuation_controls = PunctuationControlsWidget(self)
+        right_controls.pack_start(self.punctuation_controls, False, False, 0)
+        
+        # Prompt Mode controls
         if ENHANCEMENT_AVAILABLE:
             prompt_controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             prompt_controls.get_style_context().add_class("prompt-controls")
@@ -450,7 +458,9 @@ class VoiceTranscribeApp:
             dashboard_button.set_tooltip_text("Open Performance Dashboard")
             prompt_controls.pack_start(dashboard_button, False, False, 0)
             
-            header_box.pack_end(prompt_controls, False, False, 0)
+            right_controls.pack_start(prompt_controls, False, False, 0)
+        
+        header_box.pack_end(right_controls, False, False, 0)
         
         main_box.pack_start(header_box, False, False, 0)
         
