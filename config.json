@@ -1,9 +1,9 @@
 {
   "prompt_mode_enabled": true,
-  "enhancement_style": "balanced",
+  "enhancement_style": "detailed",
   "history_enabled": true,
   "history_limit": 500,
-  "selected_model": "gpt-4o-mini",
+  "selected_model": "gpt-4.1",
   "model_usage_stats": {
     "gpt-5": {
       "count": 4,
@@ -24,7 +24,7 @@
       "user_rating": []
     },
     "gpt-4.1": {
-      "count": 5,
+      "count": 6,
       "total_tokens": 0,
       "avg_latency": 0,
       "user_rating": []

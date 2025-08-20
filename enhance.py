@@ -60,76 +60,84 @@ class FragmentProcessor:
         if not transcript:
             return transcript
         
-        # Split on sentence boundaries while preserving the delimiters
-        # This handles periods, question marks, and exclamation marks
-        segments = re.split(r'([.!?])\s+', transcript.strip())
+        # Split on sentence boundaries, keeping the sentence with its punctuation
+        # Use a more robust regex that handles various sentence endings
+        sentences = re.split(r'(?<=[.!?])\s+', transcript.strip())
         
-        # Reconstruct segments with their punctuation
-        combined_segments = []
-        for i in range(0, len(segments)):
-            if i > 0 and segments[i-1] in '.!?':
-                # Skip punctuation marks as they're already attached
-                continue
-            elif i < len(segments) - 1 and segments[i+1] in '.!?':
-                # Attach punctuation to its segment
-                combined_segments.append(segments[i] + segments[i+1])
-            else:
-                # Handle the last segment if it doesn't have punctuation
-                if segments[i].strip():
-                    combined_segments.append(segments[i])
-        
-        if not combined_segments:
+        if not sentences:
             return transcript
         
-        # Process segments for merging
+        # Process sentences for merging
         reconstructed = []
         current_sentence = ""
         
-        for i, segment in enumerate(combined_segments):
-            segment = segment.strip()
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
             
-            if not segment:
+            if not sentence:
                 continue
             
-            # Check if this segment is a valid standalone sentence
-            if self._is_valid_standalone(segment):
+            # Check if this sentence is a valid standalone
+            if self._is_valid_standalone(sentence):
+                # Complete any pending merge
                 if current_sentence:
+                    if not current_sentence.endswith(('.', '!', '?')):
+                        current_sentence += '.'
                     reconstructed.append(current_sentence)
                     current_sentence = ""
-                reconstructed.append(segment)
+                # Add the standalone sentence
+                reconstructed.append(sentence)
                 continue
             
-            # Get the next segment for context (if available)
-            next_segment = combined_segments[i + 1].strip() if i < len(combined_segments) - 1 else ""
+            # Get the next sentence for context (if available)
+            next_sentence = sentences[i + 1].strip() if i < len(sentences) - 1 else ""
             
-            # Determine if current segment should be merged with next
-            if self._should_merge_with_next(segment, next_segment):
+            # Determine if current sentence should be merged with next
+            if self._should_merge_with_next(sentence, next_sentence):
                 # Start or continue building a merged sentence
                 if current_sentence:
-                    # Remove period from previous fragment and append
+                    # Remove period from current and append new fragment
                     if current_sentence.endswith('.'):
                         current_sentence = current_sentence[:-1]
-                    current_sentence += " " + segment[0].lower() + segment[1:] if segment else ""
-                else:
-                    current_sentence = segment
-            else:
-                # Complete the current sentence
-                if current_sentence:
-                    if segment:
-                        # Remove period from fragment and append
-                        if current_sentence.endswith('.'):
-                            current_sentence = current_sentence[:-1]
-                        text_to_add = segment[0].lower() + segment[1:] if segment else ""
-                        if text_to_add.endswith('.'):
-                            current_sentence += " " + text_to_add
+                    # Lowercase the first character of the fragment being added
+                    if sentence:
+                        if sentence.endswith(('.', '!', '?')):
+                            text_to_add = sentence[:-1]  # Remove ending punctuation
                         else:
-                            current_sentence += " " + text_to_add + "."
+                            text_to_add = sentence
+                        current_sentence += " " + text_to_add[0].lower() + text_to_add[1:] if text_to_add else ""
+                else:
+                    # Start a new merged sentence
+                    if sentence.endswith(('.', '!', '?')):
+                        current_sentence = sentence[:-1]  # Remove ending punctuation for merging
+                    else:
+                        current_sentence = sentence
+            else:
+                # Complete the current merge and add this sentence
+                if current_sentence:
+                    # Append current fragment to pending sentence
+                    if current_sentence.endswith('.'):
+                        current_sentence = current_sentence[:-1]
+                    if sentence:
+                        if sentence.endswith(('.', '!', '?')):
+                            ending_punct = sentence[-1]
+                            text_to_add = sentence[:-1]
+                        else:
+                            ending_punct = '.'
+                            text_to_add = sentence
+                        current_sentence += " " + text_to_add[0].lower() + text_to_add[1:] if text_to_add else ""
+                        current_sentence += ending_punct
+                    else:
+                        current_sentence += '.'
                     reconstructed.append(current_sentence)
                     current_sentence = ""
                 else:
-                    reconstructed.append(segment)
+                    # No pending merge, add sentence as-is
+                    if not sentence.endswith(('.', '!', '?')):
+                        sentence += '.'
+                    reconstructed.append(sentence)
         
-        # Don't forget the last sentence
+        # Don't forget the last sentence if there's a pending merge
         if current_sentence:
             if not current_sentence.endswith(('.', '!', '?')):
                 current_sentence += '.'
@@ -147,10 +155,13 @@ class FragmentProcessor:
         if segment in self.valid_single_sentences:
             return True
         
-        # Check if it ends with an abbreviation
+        # Check if it contains an abbreviation (not just ends with)
         for abbrev in self.abbreviations:
-            if segment.endswith(abbrev):
-                return True
+            if abbrev in segment:
+                # Make sure it's a proper sentence with the abbreviation
+                words = segment.split()
+                if len(words) >= 2:  # At least abbreviation + one other word
+                    return True
         
         # Check if it's a list item (starts with number or bullet)
         if re.match(r'^\d+\.', segment) or segment.startswith(('- ', '• ', '* ')):
@@ -165,6 +176,11 @@ class FragmentProcessor:
         if re.search(r'\d+\.\d+|\d+:\d+|\d+\.\d+\.\d+', segment):
             return True
         
+        # Check if it's a reasonably complete sentence (more than 4 words)
+        words = segment.rstrip('.!?').split()
+        if len(words) >= 5:
+            return True
+        
         return False
     
     def _should_merge_with_next(self, current: str, next_seg: str) -> bool:
@@ -177,8 +193,18 @@ class FragmentProcessor:
         if current.endswith(('?', '!')):
             return False
         
-        # Check if current segment is very short (likely a fragment)
+        # If both are reasonably complete sentences, don't merge
         current_words = current.rstrip('.').split()
+        next_words = next_seg.rstrip('.!?').split()
+        
+        # Don't merge two complete sentences (both >= 4 words)
+        if len(current_words) >= 4 and len(next_words) >= 4:
+            # Unless next starts with lowercase (clear continuation)
+            next_text = next_seg.lstrip('- •* ')
+            if next_text and not next_text[0].islower():
+                return False
+        
+        # Check if current segment is very short (likely a fragment)
         if len(current_words) <= 2:
             # But not if it's a valid standalone
             if not self._is_valid_standalone(current):
@@ -187,6 +213,13 @@ class FragmentProcessor:
         # Check if next segment starts with lowercase (continuation)
         next_text = next_seg.lstrip('- •* ')
         if next_text and next_text[0].islower():
+            # But not if current contains an abbreviation that ends a sentence
+            for abbrev in self.abbreviations:
+                if current.endswith(abbrev):
+                    # Check if this looks like the end of a sentence
+                    # (e.g., "I met Dr. Smith." vs "Written by J.")
+                    if abbrev in current and len(current_words) >= 3:
+                        return False
             return True
         
         # Check if next starts with a conjunction
