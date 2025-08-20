@@ -1455,6 +1455,44 @@ class VoiceTranscribeApp:
 
         self.history_window.show_all()
     
+    def _restart_deepgram_service(self):
+        """Restart Deepgram service with updated punctuation settings"""
+        try:
+            if self.recording and self.deepgram_service and self.deepgram_service.is_connected():
+                logging.info("Restarting Deepgram service with new settings...")
+                
+                # Store old service reference
+                old_service = self.deepgram_service
+                
+                # Create new service with updated config
+                self.deepgram_service = DeepgramService(
+                    self.deepgram_client,
+                    on_transcript=lambda text, is_final: GLib.idle_add(
+                        self._update_live_transcript, text, is_final
+                    ),
+                    on_reconnect=lambda attempt: GLib.idle_add(
+                        self.status_label.set_text,
+                        f"Reconnecting... ({attempt}/{self.max_retries})",
+                    ),
+                    max_retries=self.max_retries,
+                    punctuation_sensitivity=self.config.get('deepgram_config', {}).get('punctuation_sensitivity', 'balanced'),
+                    endpointing_ms=self.config.get('deepgram_config', {}).get('endpointing_ms', 400),
+                )
+                
+                # Connect the new service
+                if self.deepgram_service.connect():
+                    logging.info("New Deepgram service connected successfully")
+                    # Finalize the old service
+                    old_service.finalize()
+                    self.status_label.set_text("Settings applied ✓")
+                else:
+                    logging.error("Failed to connect new Deepgram service")
+                    self.deepgram_service = old_service
+                    self.status_label.set_text("Failed to apply settings")
+        except Exception as e:
+            logging.error(f"Error restarting Deepgram service: {e}")
+            self.status_label.set_text("Error applying settings")
+
     def toggle_recording(self, widget=None):
         """Toggle recording state"""
         if not self.recording:
