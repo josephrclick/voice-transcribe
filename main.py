@@ -131,6 +131,8 @@ class VoiceTranscribeApp:
                     f"Reconnecting... ({attempt}/{self.max_retries})",
                 ),
                 max_retries=self.max_retries,
+                punctuation_sensitivity=self.deepgram_config["punctuation_sensitivity"],
+                endpointing_ms=self.deepgram_config["endpointing_ms"],
             )
 
         # Create window
@@ -1220,6 +1222,10 @@ class VoiceTranscribeApp:
             "auto_fallback": True,
             "log_token_usage": True
         })
+        self.config["deepgram_config"] = getattr(self, "deepgram_config", {
+            "punctuation_sensitivity": "balanced",
+            "endpointing_ms": 400
+        })
         
         # Save the config
         try:
@@ -1248,6 +1254,11 @@ class VoiceTranscribeApp:
                     "auto_fallback": True,
                     "log_token_usage": True
                 })
+                # Load Deepgram configuration with migration support
+                self.deepgram_config = prefs.get("deepgram_config", {
+                    "punctuation_sensitivity": "balanced",
+                    "endpointing_ms": 400
+                })
         except (OSError, json.JSONDecodeError) as e:
             logging.error("Failed to load preferences: %s", e)
             print("Unable to load preferences. Defaults will be used.")
@@ -1261,6 +1272,10 @@ class VoiceTranscribeApp:
             self.enhancement_style = "balanced"
             self.history_enabled = True
             self.history_limit = 500
+            self.deepgram_config = {
+                "punctuation_sensitivity": "balanced",
+                "endpointing_ms": 400
+            }
             # Also set default config dictionary
             self.config = {
                 "selected_model": self.selected_model,
@@ -1268,7 +1283,8 @@ class VoiceTranscribeApp:
                 "prompt_mode_enabled": self.prompt_mode_enabled,
                 "enhancement_style": self.enhancement_style,
                 "history_enabled": self.history_enabled,
-                "history_limit": self.history_limit
+                "history_limit": self.history_limit,
+                "deepgram_config": self.deepgram_config
             }
 
     def load_history(self) -> List[Dict[str, Optional[str]]]:
