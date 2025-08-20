@@ -85,3 +85,98 @@ def test_finalize_does_not_reconnect():
     assert service.ws is None
     assert service._closing is False
 
+
+def test_punctuation_levels():
+    """Test all punctuation sensitivity levels"""
+    client = MagicMock()
+    
+    test_cases = [
+        ("off", {"punctuate": False, "smart_format": False}),
+        ("minimal", {"punctuate": True, "smart_format": False}),
+        ("balanced", {"punctuate": True, "smart_format": True}),
+        ("aggressive", {"punctuate": True, "smart_format": True, "diarize": True})
+    ]
+    
+    for level, expected_config in test_cases:
+        service = DeepgramService(client, dummy_callback, punctuation_sensitivity=level)
+        options = service._get_live_options()
+        
+        assert options.punctuate == expected_config["punctuate"]
+        assert options.smart_format == expected_config["smart_format"]
+        if "diarize" in expected_config:
+            assert options.diarize == expected_config["diarize"]
+
+
+def test_endpointing_configuration():
+    """Test endpointing parameter handling"""
+    client = MagicMock()
+    
+    # Test default value
+    service = DeepgramService(client, dummy_callback)
+    options = service._get_live_options()
+    assert options.endpointing == 400  # Default 400ms
+    
+    # Test custom values
+    for endpointing_ms in [200, 500, 800, 1000]:
+        service = DeepgramService(client, dummy_callback, endpointing_ms=endpointing_ms)
+        options = service._get_live_options()
+        assert options.endpointing == endpointing_ms
+
+
+def test_vad_events_enabled():
+    """Test Voice Activity Detection integration"""
+    client = MagicMock()
+    service = DeepgramService(client, dummy_callback)
+    options = service._get_live_options()
+    
+    assert options.vad_events == True
+    assert options.interim_results == True
+    assert options.utterance_end_ms == 1000
+
+
+def test_invalid_punctuation_level_fallback():
+    """Test fallback behavior for invalid punctuation levels"""
+    client = MagicMock()
+    service = DeepgramService(client, dummy_callback, punctuation_sensitivity="invalid")
+    options = service._get_live_options()
+    
+    # Should fallback to "balanced" defaults
+    assert options.punctuate == True
+    assert options.smart_format == True
+
+
+def test_backward_compatibility():
+    """Test that existing code without new parameters works"""
+    client = MagicMock()
+    
+    # This should work exactly like before
+    service = DeepgramService(client, dummy_callback)
+    options = service._get_live_options()
+    
+    # Should have balanced defaults
+    assert options.punctuate == True
+    assert options.smart_format == True
+    assert options.endpointing == 400
+    assert options.vad_events == True
+    assert options.interim_results == True
+
+
+def test_get_live_options_structure():
+    """Test that _get_live_options returns properly structured LiveOptions"""
+    client = MagicMock()
+    service = DeepgramService(client, dummy_callback)
+    options = service._get_live_options()
+    
+    # Test all required parameters are set
+    assert options.model == "nova-3"
+    assert options.language == "en-US"
+    assert options.encoding == "linear16"
+    assert options.sample_rate == 16000
+    assert options.channels == 1
+    
+    # Test new parameters
+    assert hasattr(options, 'endpointing')
+    assert hasattr(options, 'utterance_end_ms')
+    assert hasattr(options, 'vad_events')
+    assert hasattr(options, 'interim_results')
+
