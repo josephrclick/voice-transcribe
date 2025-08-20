@@ -21,6 +21,7 @@ from deepgram import (
     PrerecordedOptions,
 )
 from deepgram_service import DeepgramService
+from punctuation_processor import PunctuationProcessor, FragmentCandidate
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 
@@ -115,6 +116,10 @@ class VoiceTranscribeApp:
         self.partial_mark = None
         self.partial_tag = None
         self.max_retries = 5
+        
+        # Punctuation processing pipeline
+        self.pending_fragments = []
+        self.punctuation_processor = None
 
         # Setup Deepgram client and service
         self.deepgram_client = None
@@ -1226,6 +1231,12 @@ class VoiceTranscribeApp:
             "punctuation_sensitivity": "balanced",
             "endpointing_ms": 400
         })
+        self.config["punctuation_processing"] = getattr(self, "punctuation_config", {
+            "enabled": True,
+            "merge_threshold_ms": 800,
+            "min_sentence_length": 3,
+            "fragment_sensitivity": "balanced"
+        })
         
         # Save the config
         try:
@@ -1259,6 +1270,13 @@ class VoiceTranscribeApp:
                     "punctuation_sensitivity": "balanced",
                     "endpointing_ms": 400
                 })
+                # Load punctuation processing configuration
+                self.punctuation_config = prefs.get("punctuation_processing", {
+                    "enabled": True,
+                    "merge_threshold_ms": 800,
+                    "min_sentence_length": 3,
+                    "fragment_sensitivity": "balanced"
+                })
         except (OSError, json.JSONDecodeError) as e:
             logging.error("Failed to load preferences: %s", e)
             print("Unable to load preferences. Defaults will be used.")
@@ -1276,6 +1294,12 @@ class VoiceTranscribeApp:
                 "punctuation_sensitivity": "balanced",
                 "endpointing_ms": 400
             }
+            self.punctuation_config = {
+                "enabled": True,
+                "merge_threshold_ms": 800,
+                "min_sentence_length": 3,
+                "fragment_sensitivity": "balanced"
+            }
             # Also set default config dictionary
             self.config = {
                 "selected_model": self.selected_model,
@@ -1284,8 +1308,42 @@ class VoiceTranscribeApp:
                 "enhancement_style": self.enhancement_style,
                 "history_enabled": self.history_enabled,
                 "history_limit": self.history_limit,
-                "deepgram_config": self.deepgram_config
+                "deepgram_config": self.deepgram_config,
+                "punctuation_processing": self.punctuation_config
             }
+        
+        # Initialize punctuation processor
+        self._initialize_punctuation_processor()
+
+    def _initialize_punctuation_processor(self):
+        """Initialize the punctuation processor with current configuration."""
+        if not self.punctuation_config.get("enabled", True):
+            self.punctuation_processor = None
+            return
+            
+        # Map fragment sensitivity to threshold values
+        sensitivity_map = {
+            "strict": 0.8,      # Only merge obvious fragments
+            "balanced": 0.7,    # Default balanced approach
+            "lenient": 0.5      # More aggressive merging
+        }
+        
+        fragment_threshold = sensitivity_map.get(
+            self.punctuation_config.get("fragment_sensitivity", "balanced"),
+            0.7
+        )
+        
+        try:
+            self.punctuation_processor = PunctuationProcessor(
+                merge_threshold_ms=self.punctuation_config.get("merge_threshold_ms", 800),
+                min_sentence_length=self.punctuation_config.get("min_sentence_length", 3),
+                fragment_threshold=fragment_threshold,
+                max_pending_fragments=5  # Keep buffer size manageable
+            )
+            logging.info(f"Punctuation processor initialized with sensitivity: {self.punctuation_config.get('fragment_sensitivity', 'balanced')}")
+        except Exception as e:
+            logging.error(f"Failed to initialize punctuation processor: {e}")
+            self.punctuation_processor = None
 
     def load_history(self) -> List[Dict[str, Optional[str]]]:
         """Load history entries from JSONL file"""
@@ -1500,30 +1558,65 @@ class VoiceTranscribeApp:
 
     def _update_live_transcript(self, text, is_final):
         """Update the transcript view with partial and final results."""
-        buffer = self.original_text_view.get_buffer()
-
-        if self.partial_mark is None:
+        # Handle interim results (partial transcripts) - pass through directly
+        if not is_final:
+            buffer = self.original_text_view.get_buffer()
+            if self.partial_mark is None:
+                end_iter = buffer.get_end_iter()
+                self.partial_mark = buffer.create_mark(None, end_iter, True)
+            # Remove any existing partial text and insert new text at the mark
+            start_iter = buffer.get_iter_at_mark(self.partial_mark)
+            buffer.delete(start_iter, buffer.get_end_iter())
+            buffer.insert(start_iter, text)
+            # Re-fetch iterators after modifying buffer
+            start_iter = buffer.get_iter_at_mark(self.partial_mark)
             end_iter = buffer.get_end_iter()
-            self.partial_mark = buffer.create_mark(None, end_iter, True)
-
-        # Remove any existing partial text and insert new text at the mark
-        start_iter = buffer.get_iter_at_mark(self.partial_mark)
-        buffer.delete(start_iter, buffer.get_end_iter())
-        buffer.insert(start_iter, text)
-
-        # Re-fetch iterators after modifying buffer
-        start_iter = buffer.get_iter_at_mark(self.partial_mark)
-        end_iter = buffer.get_end_iter()
-
-        if is_final:
+            # Highlight partial results until they are finalized
+            buffer.apply_tag(self.partial_tag, start_iter, end_iter)
+            return False
+        
+        # Process final results through punctuation pipeline
+        processed_text = None
+        
+        if self.punctuation_processor is not None:
+            try:
+                # Process transcript with intelligent punctuation handling
+                processed_text, self.pending_fragments = self.punctuation_processor.process_transcript(
+                    text, 
+                    is_final, 
+                    time.time() * 1000,  # Convert to milliseconds
+                    self.pending_fragments
+                )
+            except Exception as e:
+                logging.error(f"Punctuation processing failed: {e}")
+                # Fallback to original text on error
+                processed_text = text
+        else:
+            # Processor disabled, pass through original text
+            processed_text = text
+        
+        # Only update UI if we have text to display
+        if processed_text:
+            buffer = self.original_text_view.get_buffer()
+            if self.partial_mark is None:
+                end_iter = buffer.get_end_iter()
+                self.partial_mark = buffer.create_mark(None, end_iter, True)
+            
+            # Remove any existing partial text and insert processed text
+            start_iter = buffer.get_iter_at_mark(self.partial_mark)
+            buffer.delete(start_iter, buffer.get_end_iter())
+            buffer.insert(start_iter, processed_text)
+            
+            # Re-fetch iterators after modifying buffer
+            start_iter = buffer.get_iter_at_mark(self.partial_mark)
+            end_iter = buffer.get_end_iter()
+            
             # Finalize the segment and append a space for the next one
             buffer.remove_tag(self.partial_tag, start_iter, end_iter)
             buffer.insert(end_iter, " ")
-            self.confirmed_text += text + " "
+            self.confirmed_text += processed_text + " "
             self.partial_mark = None
-        else:
-            # Highlight partial results until they are finalized
-            buffer.apply_tag(self.partial_tag, start_iter, end_iter)
+        
         return False
 
     def _update_elapsed_time(self):
