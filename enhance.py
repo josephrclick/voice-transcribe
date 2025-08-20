@@ -7,7 +7,8 @@ Handles OpenAI API integration for improving transcripts as LLM prompts
 import os
 import time
 import logging
-from typing import Optional, Tuple
+import re
+from typing import Optional, Tuple, List, Dict
 import openai
 from dotenv import load_dotenv
 from model_config import model_registry, ModelAdapter
@@ -27,31 +28,250 @@ client = openai.OpenAI(api_key=api_key)
 # Initialize model adapter for dynamic parameter handling
 model_adapter = ModelAdapter(client)
 
-# Enhancement style prompts
+
+class FragmentProcessor:
+    """Pre-process fragmented transcripts before OpenAI enhancement"""
+    
+    def __init__(self):
+        # Common abbreviations that should not trigger merging
+        self.abbreviations = {
+            'Dr.', 'Mr.', 'Mrs.', 'Ms.', 'Prof.', 'Sr.', 'Jr.',
+            'St.', 'Mt.', 'vs.', 'No.', 'etc.', 'e.g.', 'i.e.',
+            'a.m.', 'p.m.', 'ca.', 'approx.', 'Inc.', 'Ltd.', 'Co.',
+            'Corp.', 'Ph.D.', 'M.D.', 'B.A.', 'M.A.', 'B.S.', 'M.S.',
+            'Jan.', 'Feb.', 'Mar.', 'Apr.', 'Jun.', 'Jul.', 'Aug.',
+            'Sep.', 'Sept.', 'Oct.', 'Nov.', 'Dec.',
+            'U.S.', 'U.K.', 'U.S.A.', 'E.U.'
+        }
+        
+        # Common single-word valid sentences
+        self.valid_single_sentences = {
+            'Yes.', 'No.', 'Okay.', 'Right.', 'Sure.', 'Thanks.',
+            'Hello.', 'Goodbye.', 'Stop.', 'Wait.', 'Please.', 'Sorry.'
+        }
+        
+        # Conjunctions that often start fragmented sentences
+        self.starting_conjunctions = {'and', 'but', 'or', 'so', 'then', 
+                                      'now', 'because', 'although', 'while'}
+    
+    def reconstruct_fragments(self, transcript: str) -> str:
+        """Intelligently merge sentence fragments before enhancement"""
+        
+        if not transcript:
+            return transcript
+        
+        # Split on sentence boundaries while preserving the delimiters
+        # This handles periods, question marks, and exclamation marks
+        segments = re.split(r'([.!?])\s+', transcript.strip())
+        
+        # Reconstruct segments with their punctuation
+        combined_segments = []
+        for i in range(0, len(segments)):
+            if i > 0 and segments[i-1] in '.!?':
+                # Skip punctuation marks as they're already attached
+                continue
+            elif i < len(segments) - 1 and segments[i+1] in '.!?':
+                # Attach punctuation to its segment
+                combined_segments.append(segments[i] + segments[i+1])
+            else:
+                # Handle the last segment if it doesn't have punctuation
+                if segments[i].strip():
+                    combined_segments.append(segments[i])
+        
+        if not combined_segments:
+            return transcript
+        
+        # Process segments for merging
+        reconstructed = []
+        current_sentence = ""
+        
+        for i, segment in enumerate(combined_segments):
+            segment = segment.strip()
+            
+            if not segment:
+                continue
+            
+            # Check if this segment is a valid standalone sentence
+            if self._is_valid_standalone(segment):
+                if current_sentence:
+                    reconstructed.append(current_sentence)
+                    current_sentence = ""
+                reconstructed.append(segment)
+                continue
+            
+            # Get the next segment for context (if available)
+            next_segment = combined_segments[i + 1].strip() if i < len(combined_segments) - 1 else ""
+            
+            # Determine if current segment should be merged with next
+            if self._should_merge_with_next(segment, next_segment):
+                # Start or continue building a merged sentence
+                if current_sentence:
+                    # Remove period from previous fragment and append
+                    if current_sentence.endswith('.'):
+                        current_sentence = current_sentence[:-1]
+                    current_sentence += " " + segment[0].lower() + segment[1:] if segment else ""
+                else:
+                    current_sentence = segment
+            else:
+                # Complete the current sentence
+                if current_sentence:
+                    if segment:
+                        # Remove period from fragment and append
+                        if current_sentence.endswith('.'):
+                            current_sentence = current_sentence[:-1]
+                        text_to_add = segment[0].lower() + segment[1:] if segment else ""
+                        if text_to_add.endswith('.'):
+                            current_sentence += " " + text_to_add
+                        else:
+                            current_sentence += " " + text_to_add + "."
+                    reconstructed.append(current_sentence)
+                    current_sentence = ""
+                else:
+                    reconstructed.append(segment)
+        
+        # Don't forget the last sentence
+        if current_sentence:
+            if not current_sentence.endswith(('.', '!', '?')):
+                current_sentence += '.'
+            reconstructed.append(current_sentence)
+        
+        return " ".join(reconstructed)
+    
+    def _is_valid_standalone(self, segment: str) -> bool:
+        """Check if a segment is a valid standalone sentence"""
+        
+        if not segment:
+            return False
+        
+        # Check if it's a known valid single sentence
+        if segment in self.valid_single_sentences:
+            return True
+        
+        # Check if it ends with an abbreviation
+        for abbrev in self.abbreviations:
+            if segment.endswith(abbrev):
+                return True
+        
+        # Check if it's a list item (starts with number or bullet)
+        if re.match(r'^\d+\.', segment) or segment.startswith(('- ', '• ', '* ')):
+            return True
+        
+        # Check if it contains certain patterns that indicate completeness
+        # URLs, emails, file paths
+        if re.search(r'https?://|www\.|@|\.[a-z]{2,4}/', segment):
+            return True
+        
+        # Decimal numbers, versions, times
+        if re.search(r'\d+\.\d+|\d+:\d+|\d+\.\d+\.\d+', segment):
+            return True
+        
+        return False
+    
+    def _should_merge_with_next(self, current: str, next_seg: str) -> bool:
+        """Determine if current segment should be merged with the next one"""
+        
+        if not current or not next_seg:
+            return False
+        
+        # Never merge if current ends with ? or !
+        if current.endswith(('?', '!')):
+            return False
+        
+        # Check if current segment is very short (likely a fragment)
+        current_words = current.rstrip('.').split()
+        if len(current_words) <= 2:
+            # But not if it's a valid standalone
+            if not self._is_valid_standalone(current):
+                return True
+        
+        # Check if next segment starts with lowercase (continuation)
+        next_text = next_seg.lstrip('- •* ')
+        if next_text and next_text[0].islower():
+            return True
+        
+        # Check if next starts with a conjunction
+        next_first_word = next_text.split()[0].lower() if next_text.split() else ""
+        if next_first_word in self.starting_conjunctions:
+            # But only if current segment is short
+            if len(current_words) <= 3:
+                return True
+        
+        # Check if current ends with a preposition or conjunction
+        if current_words:
+            last_word = current_words[-1].rstrip('.,!?').lower()
+            if last_word in {'the', 'a', 'an', 'to', 'of', 'in', 'on', 
+                            'at', 'by', 'for', 'with', 'from', 'and', 
+                            'or', 'but', 'that', 'which', 'who'}:
+                return True
+        
+        return False
+
+
+# Enhancement style prompts with fragment awareness
 ENHANCEMENT_PROMPTS = {
-    "concise": """You are a prompt optimization expert. Rewrite the following voice transcript as a clear, concise prompt for an AI assistant. 
-Remove filler words, fix grammar, and structure it for maximum clarity while preserving the user's intent.
-Keep it brief but complete.""",
+    "concise": """You are a prompt optimization expert. The following voice transcript may contain over-punctuated sentence fragments due to transcription errors.
+
+First, intelligently merge any fragments that should be part of the same sentence. Then rewrite as a clear, concise prompt for an AI assistant.
+
+Remove filler words, fix grammar, merge fragments naturally, and structure it for maximum clarity while preserving the user's intent. Keep it brief but complete.
+
+Example input: "So I need. A Python function. That reads. CSV files."
+Example output: "Create a Python function that reads CSV files."
+
+Important: Preserve abbreviations (Dr., U.S.), decimals (3.14), times (3:30 p.m.), and legitimate list structures.""",
     
-    "balanced": """You are a prompt optimization expert. Transform this voice transcript into a well-structured prompt for an AI assistant.
-- Fix grammar and remove filler words
-- Add helpful context and structure
-- Clarify ambiguous requests
-- Preserve the user's intent and tone
-Make it clear and effective without being overly verbose.""",
+    "balanced": """You are a prompt optimization expert. This voice transcript may contain fragmented sentences due to transcription punctuation errors.
+
+Your task:
+1. Identify and merge sentence fragments that belong together
+2. Fix grammar and remove filler words
+3. Add helpful context and structure
+4. Clarify ambiguous requests
+5. Preserve the user's intent and tone
+
+Make it clear and effective without being overly verbose. Focus on creating a cohesive, well-structured prompt from potentially fragmented input.
+
+Example: "Good morning. Everyone. Let's discuss. The project timeline." → "Good morning everyone, let's discuss the project timeline."
+
+Note: Respect abbreviations, decimals, URLs, version numbers, and legitimate list boundaries.""",
     
-    "detailed": """You are a prompt optimization expert. Enhance this voice transcript into a comprehensive prompt for an AI assistant.
-- Fix all grammar and transcription errors
-- Add relevant context and background
-- Break down complex requests into clear steps
-- Suggest additional details that might be helpful
-- Structure it for maximum AI comprehension
-Be thorough but maintain focus on the user's goal."""
+    "detailed": """You are a prompt optimization expert. The input transcript likely contains over-punctuated sentence fragments due to voice transcription errors.
+
+Process this transcript by:
+1. Intelligently merging sentence fragments into coherent thoughts
+2. Fixing all grammar and transcription errors
+3. Adding relevant context and background
+4. Breaking down complex requests into clear steps
+5. Suggesting additional details that might be helpful
+6. Structuring for maximum AI comprehension
+
+Be thorough but maintain focus on the user's goal. Transform fragmented input into a comprehensive, well-structured prompt.
+
+Note: Input may look like "So I want. To create. A machine learning. Model that. Predicts customer. Behavior." - merge these fragments into natural, flowing sentences.
+
+Important: Preserve technical terms, abbreviations (Ph.D., e.g.), decimals, times, URLs, and maintain legitimate list structures."""
 }
 
 def estimate_tokens(text: str) -> int:
     """Rough estimate of token count (1 token ≈ 4 characters)"""
     return len(text) // 4
+
+def estimate_tokens_with_fragments(text: str) -> int:
+    """Enhanced token estimation accounting for fragment processing overhead"""
+    base_tokens = len(text) // 4
+    
+    # Add overhead for fragment processing
+    # Count sentence boundaries to estimate fragmentation level
+    fragment_count = text.count('. ') + text.count('? ') + text.count('! ')
+    
+    if fragment_count > 10:  # High fragmentation
+        overhead = int(base_tokens * 0.2)  # 20% overhead for processing
+    elif fragment_count > 5:
+        overhead = int(base_tokens * 0.1)  # 10% overhead
+    else:
+        overhead = 0
+    
+    return base_tokens + overhead
 
 def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional[str] = None, model_name: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -76,8 +296,18 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
     if style not in ENHANCEMENT_PROMPTS:
         style = "balanced"
     
-    # Check token limits (leaving room for response)
-    if estimate_tokens(transcript) > 3000:
+    # Pre-process fragments if detected
+    fragment_processor = FragmentProcessor()
+    processed_transcript = fragment_processor.reconstruct_fragments(transcript)
+    
+    # Log fragment processing for analytics
+    if processed_transcript != transcript:
+        original_segments = len([s for s in re.split(r'[.!?]\s+', transcript) if s.strip()])
+        processed_segments = len([s for s in re.split(r'[.!?]\s+', processed_transcript) if s.strip()])
+        logger.info(f"Fragment processing applied: {original_segments} → {processed_segments} segments")
+    
+    # Check token limits with fragment-aware estimation
+    if estimate_tokens_with_fragments(processed_transcript) > 3000:
         return None, "Transcript too long for enhancement"
     
     # Get model configuration (prefer model_key over model_name)
@@ -106,10 +336,10 @@ def enhance_prompt(transcript: str, style: str = "balanced", model_key: Optional
         model_name = model_config.model_name
     
     try:
-        # Prepare messages
+        # Prepare messages with processed transcript
         messages = [
             {"role": "system", "content": ENHANCEMENT_PROMPTS[style]},
-            {"role": "user", "content": transcript}
+            {"role": "user", "content": processed_transcript}  # Use processed version
         ]
         
         # Prepare additional parameters
