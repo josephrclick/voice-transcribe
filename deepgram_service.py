@@ -31,7 +31,7 @@ class DeepgramService:
         self.punctuation_sensitivity = punctuation_sensitivity
         self.endpointing_ms = endpointing_ms
         self.ws = None
-        self._closing = False
+        self._closing = threading.Event()
 
     # ------------------------------------------------------------------
     # Connection management
@@ -89,7 +89,7 @@ class DeepgramService:
                 return True
             except Exception as exc:  # pragma: no cover - network errors
                 # Don't show reconnect message if we're intentionally closing
-                if self._closing:
+                if self._closing.is_set():
                     return False
                 attempt += 1
                 if self.on_reconnect:
@@ -133,9 +133,9 @@ class DeepgramService:
 
         self.ws = None
 
-        if self._closing:
+        if self._closing.is_set():
             # Expected close after a finalize; do not attempt to reconnect.
-            self._closing = False
+            self._closing.clear()
             return
 
         # Unexpected close – reconnect automatically.
@@ -162,12 +162,12 @@ class DeepgramService:
 
         if not self.ws:
             return False
-        self._closing = True
+        self._closing.set()
         try:
             self.ws.finish()
             return True
         except Exception:  # pragma: no cover - network errors
-            self._closing = False
+            self._closing.clear()
             # Treat as a hard failure; clear socket so future starts create a
             # fresh connection rather than trying to reuse a closed one.
             self.ws = None
@@ -177,4 +177,18 @@ class DeepgramService:
         """Return True if the WebSocket is currently connected."""
 
         return bool(self.ws)
+
+    # ------------------------------------------------------------------
+    # Context manager for resource cleanup
+    # ------------------------------------------------------------------
+    def __enter__(self):
+        """Enter context manager - start the connection."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager - ensure proper cleanup."""
+        if self.ws:
+            self.finalize()
+        return False  # Don't suppress exceptions
 

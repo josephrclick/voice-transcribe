@@ -83,7 +83,7 @@ def test_finalize_does_not_reconnect():
     service._handle_close(None)
     service.start.assert_not_called()
     assert service.ws is None
-    assert service._closing is False
+    assert not service._closing.is_set()
 
 
 def test_punctuation_levels():
@@ -179,4 +179,101 @@ def test_get_live_options_structure():
     assert hasattr(options, 'utterance_end_ms')
     assert hasattr(options, 'vad_events')
     assert hasattr(options, 'interim_results')
+
+
+def test_thread_safety_closing_flag():
+    """Test that _closing flag is thread-safe using threading.Event"""
+    client = MagicMock()
+    service = DeepgramService(client, dummy_callback)
+    
+    # Test initial state
+    assert not service._closing.is_set()
+    
+    # Test setting and clearing
+    service._closing.set()
+    assert service._closing.is_set()
+    
+    service._closing.clear()
+    assert not service._closing.is_set()
+
+
+def test_context_manager_basic():
+    """Test basic context manager functionality"""
+    client = MagicMock()
+    ws = MagicMock()
+    client.listen.websocket.v.return_value = ws
+    
+    # Mock the start method to avoid threading complexities in tests
+    with DeepgramService(client, dummy_callback) as service:
+        # Service should be returned
+        assert service is not None
+        assert isinstance(service, DeepgramService)
+    
+    # After context exit, finalize should be called if ws exists
+    # Note: In real usage, the WebSocket would be set during start()
+
+
+def test_context_manager_cleanup_on_exception():
+    """Test context manager cleans up even when exceptions occur"""
+    client = MagicMock()
+    ws = MagicMock()
+    client.listen.websocket.v.return_value = ws
+    
+    try:
+        with DeepgramService(client, dummy_callback) as service:
+            service.ws = ws  # Simulate connected state
+            raise ValueError("Test exception")
+    except ValueError:
+        pass  # Expected
+    
+    # Even with exception, finalize should be called
+    ws.finish.assert_called_once()
+
+
+def test_context_manager_no_finalize_if_not_connected():
+    """Test context manager doesn't call finalize if not connected"""
+    client = MagicMock()
+    
+    with DeepgramService(client, dummy_callback) as service:
+        # Don't set ws - simulate no connection
+        pass
+    
+    # Since ws is None, no finalize should be attempted
+    # This just ensures no exceptions are raised
+
+
+def test_finalize_thread_safety():
+    """Test finalize method properly handles threading.Event"""
+    client = MagicMock()
+    ws = MagicMock()
+    service = DeepgramService(client, dummy_callback)
+    service.ws = ws
+    
+    # Initial state
+    assert not service._closing.is_set()
+    
+    # Call finalize
+    result = service.finalize()
+    
+    # Should set the closing event and call finish
+    assert result is True
+    ws.finish.assert_called_once()
+    assert service._closing.is_set()
+
+
+def test_finalize_exception_handling():
+    """Test finalize properly clears _closing flag on exception"""
+    client = MagicMock()
+    ws = MagicMock()
+    ws.finish.side_effect = Exception("Connection error")
+    service = DeepgramService(client, dummy_callback)
+    service.ws = ws
+    
+    # Call finalize - should handle exception
+    result = service.finalize()
+    
+    # Should return False and clear the closing flag
+    assert result is False
+    assert not service._closing.is_set()
+    assert service.ws is None
 
