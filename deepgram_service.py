@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from app_config import DEEPGRAM_CONFIG, get_config
 import time
 from typing import Callable, Optional
 

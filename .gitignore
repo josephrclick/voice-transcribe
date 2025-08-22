@@ -1,8 +1,8 @@
 # Environment
 .env
 .env.local
-config.json
 .archive/
+/node_modules/
 
 # Python
 __pycache__/
@@ -54,3 +54,7 @@ logs/
 tmp/
 temp/
 *.tmp
+
+# Ultra MCP vector index
+.ultra-mcp/
+drizzle.config.json

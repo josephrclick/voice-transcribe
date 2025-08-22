@@ -14,6 +14,20 @@ import numpy as np
 import sounddevice as sd
 import pyperclip
 import gi
+from terminal_config import (
+    is_terminal_pattern,
+    is_code_ide_pattern,
+    has_terminal_title_keyword
+)
+from app_config import (
+    AUDIO_CONFIG,
+    COLORS,
+    APP_CONFIG,
+    TIMING_CONFIG,
+    DEFAULT_PREFERENCES,
+    get_config
+)
+from paste_strategies import PasteStrategyManager
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
 from deepgram import (
@@ -48,7 +62,14 @@ except ImportError:
     print("Warning: model_config.py not found. Model selection will be disabled.")
     MODEL_CONFIG_AVAILABLE = False
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging
+log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
     
 # Load environment variables
 load_dotenv()
@@ -57,29 +78,11 @@ if not DEEPGRAM_API_KEY:
     print("Error: DEEPGRAM_API_KEY is not set. Please set the environment variable and restart.")
     sys.exit(1)
 
-# Audio Configuration
-SAMPLE_RATE = 16000
-CHUNK_DURATION = 0.1  # 100ms chunks
-
-# History configuration
-HISTORY_FILE = os.path.expanduser("~/.local/share/voice-transcribe/history.jsonl")
-
-# Colors
-COLORS = {
-    'bg': '#1e1e2e',              # Dark background
-    'button_idle': '#45475a',      # Gray
-    'button_recording': '#f38ba8', # Red/Pink
-    'button_hover': '#89b4fa',     # Blue
-    'text': '#cdd6f4',            # Light text
-    'accent': '#89b4fa',          # Blue accent
-    'success': '#a6e3a1',         # Green
-    'danger': '#f38ba8',          # Red
-    'enhanced_bg': '#313244',     # Slightly lighter for enhanced panel
-    'warning': '#f9e2af',         # Yellow for warnings
-}
-
-# Application
-APP_TITLE = "Voice Transcribe v3.3"
+# Get configuration values
+SAMPLE_RATE = get_config('AUDIO', 'SAMPLE_RATE', AUDIO_CONFIG['SAMPLE_RATE'])
+CHUNK_DURATION = get_config('AUDIO', 'CHUNK_DURATION', AUDIO_CONFIG['CHUNK_DURATION'])
+HISTORY_FILE = APP_CONFIG['HISTORY_FILE']
+APP_TITLE = APP_CONFIG['TITLE']
 
 class VoiceTranscribeApp:
     def __init__(self):
@@ -91,6 +94,10 @@ class VoiceTranscribeApp:
         self.transcript_text = ""
         self.enhanced_text = ""
         self.enhancement_error = None
+        
+        # Terminal detection cache
+        self._terminal_cache = None
+        self._terminal_cache_time = 0
         
         # Prompt Mode settings
         self.prompt_mode_enabled = False
@@ -144,7 +151,10 @@ class VoiceTranscribeApp:
         # Create window
         self.window = Gtk.Window()
         self.window.set_title(APP_TITLE)
-        self.window.set_default_size(700, 500)  # Wider for side-by-side
+        self.window.set_default_size(
+            APP_CONFIG['WINDOW_WIDTH'], 
+            500  # Keep height as 500 for side-by-side
+        )
         self.window.set_keep_above(True)
         self.window.connect("destroy", self.on_destroy)
         
@@ -1915,24 +1925,140 @@ class VoiceTranscribeApp:
         self.status_label.set_text("Transcript cleared")
         GLib.timeout_add_seconds(2, self._reset_status)
     
+    def _detect_terminal_window(self):
+        """Detect if the active window is a terminal (with caching)."""
+        # Check cache validity
+        current_time = time.time()
+        cache_ttl = TIMING_CONFIG.get('TERMINAL_DETECTION_CACHE_TTL', 2)
+        
+        if (self._terminal_cache is not None and 
+            current_time - self._terminal_cache_time < cache_ttl):
+            logger.debug(f"Using cached terminal detection result: {self._terminal_cache}")
+            return self._terminal_cache
+        
+        # Perform actual detection
+        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+        
+        # Comprehensive list of terminal identifiers
+        terminal_classes = [
+            'gnome-terminal-server', 'gnome-terminal', 'konsole', 'xterm', 
+            'alacritty', 'kitty', 'terminator', 'tilix', 'urxvt', 'rxvt',
+            'st', 'st-256color', 'foot', 'wezterm', 'hyper', 'yakuake',
+            'org.gnome.terminal', 'org.gnome.console', 'terminal'
+        ]
+        
+        # VS Code/Cursor patterns - need special handling
+        code_patterns = ['code', 'cursor', 'vscodium', 'code-oss']
+        
+        if session_type == 'x11':
+            try:
+                # Get window ID
+                result = subprocess.run(['xdotool', 'getactivewindow'],
+                                      capture_output=True, text=True, check=True)
+                window_id = result.stdout.strip()
+                
+                # Get window class using xprop (more reliable than xdotool)
+                result = subprocess.run(['xprop', '-id', window_id, 'WM_CLASS'],
+                                      capture_output=True, text=True, check=True)
+                wm_class_output = result.stdout.strip().lower()
+                logger.debug(f"WM_CLASS output: {wm_class_output}")
+                
+                # Also get window title for additional context
+                result = subprocess.run(['xdotool', 'getactivewindow', 'getwindowname'],
+                                      capture_output=True, text=True, check=True)
+                window_title = result.stdout.strip().lower()
+                logger.debug(f"Window title: {window_title}")
+                
+                # Check for standard terminals
+                for terminal in terminal_classes:
+                    if terminal in wm_class_output:
+                        logger.debug(f"Detected terminal via WM_CLASS (pattern: {terminal})")
+                        # Update cache
+                        self._terminal_cache = True
+                        self._terminal_cache_time = current_time
+                        return True
+                
+                # Check for VS Code/Cursor with terminal in title
+                for code_pattern in code_patterns:
+                    if code_pattern in wm_class_output or code_pattern in window_title:
+                        # Check if "terminal" is in the window title (indicates terminal is focused)
+                        if 'terminal' in window_title or 'bash' in window_title or 'zsh' in window_title:
+                            logger.debug(f"Detected VS Code/Cursor terminal (title: {window_title})")
+                            # Update cache
+                            self._terminal_cache = True
+                            self._terminal_cache_time = current_time
+                            return True
+                        else:
+                            logger.debug(f"VS Code/Cursor detected but not in terminal")
+                            # Update cache
+                            self._terminal_cache = False
+                            self._terminal_cache_time = current_time
+                            return False
+                
+            except Exception as e:
+                logger.error(f"Error detecting window: {e}")
+                pass
+                
+        elif session_type == 'wayland':
+            # Wayland has limited window inspection capabilities
+            # Try multiple approaches
+            
+            # Method 1: Try swaymsg for Sway compositor
+            try:
+                result = subprocess.run(['swaymsg', '-t', 'get_tree'],
+                                      capture_output=True, text=True, check=True)
+                output = result.stdout.lower()
+                
+                # Look for focused window
+                if '"focused":true' in output:
+                    for terminal in terminal_classes:
+                        if terminal in output:
+                            logger.debug(f"Detected terminal on Wayland/Sway (pattern: {terminal})")
+                            # Update cache
+                            self._terminal_cache = True
+                            self._terminal_cache_time = current_time
+                            return True
+            except Exception:
+                pass
+            
+            # Method 2: Try hyprctl for Hyprland compositor
+            try:
+                result = subprocess.run(['hyprctl', 'activewindow'],
+                                      capture_output=True, text=True, check=True)
+                output = result.stdout.lower()
+                
+                for terminal in terminal_classes:
+                    if terminal in output:
+                        logger.debug(f"Detected terminal on Wayland/Hyprland (pattern: {terminal})")
+                        # Update cache
+                        self._terminal_cache = True
+                        self._terminal_cache_time = current_time
+                        return True
+            except Exception:
+                pass
+                
+        logger.debug("Not detected as terminal")
+        # Update cache  
+        self._terminal_cache = False
+        self._terminal_cache_time = current_time
+        return False
+
     def _attempt_paste(self):
         """Attempt to paste using available clipboard tools"""
         session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
-
-        if session_type == 'x11':
-            try:
-                time.sleep(0.5)
-                subprocess.run(['xdotool', 'key', 'ctrl+v'], check=True)
-                print("Auto-pasted with xdotool")
-            except Exception:
-                pass
-        elif session_type == 'wayland':
-            try:
-                time.sleep(0.5)
-                subprocess.run(['wtype', pyperclip.paste()], check=True)
-                print("Auto-pasted with wtype")
-            except Exception:
-                pass
+        is_terminal = self._detect_terminal_window()
+        
+        # Add delay before paste
+        time.sleep(TIMING_CONFIG['PASTE_DELAY'])
+        
+        # Use the strategy manager to handle paste
+        if not hasattr(self, 'paste_manager'):
+            self.paste_manager = PasteStrategyManager()
+        
+        success = self.paste_manager.execute_paste(session_type, is_terminal)
+        
+        if not success:
+            logger.warning(f"Failed to auto-paste (session={session_type}, terminal={is_terminal})")
     
     def _reset_status(self):
         """Reset status to ready"""
