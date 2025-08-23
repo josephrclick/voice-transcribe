@@ -1,5 +1,5 @@
 {
-  "prompt_mode_enabled": false,
+  "prompt_mode_enabled": true,
   "enhancement_style": "detailed",
   "history_enabled": true,
   "history_limit": 500,

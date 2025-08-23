@@ -225,10 +225,12 @@ source venv/bin/activate && python main.py
 ### Configuration
 
 - **API Keys**: Add to `.env` (never commit)
+
 ```
 DEEPGRAM_API_KEY=your_key_here
 OPENAI_API_KEY=sk-your_key_here  # Optional for Prompt Mode + Dashboard
 ```
+
 - **Preferences**: Auto-saved to `config.json` (don't edit manually)
 
 ## Security Guidelines

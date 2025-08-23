@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+# Standard library imports
 import argparse
 import json
 import logging
@@ -8,29 +10,30 @@ import tempfile
 import threading
 import time
 import wave
+from typing import Dict, List, Optional
 
 import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+
 import numpy as np
 import pyperclip
 import sounddevice as sd
 
-from app_config import APP_CONFIG, AUDIO_CONFIG, COLORS, TIMING_CONFIG, get_config
-from paste_strategies import PasteStrategyManager
-from subprocess_utils import SubprocessManager
-
-gi.require_version("Gtk", "3.0")
-from typing import Dict, List, Optional
-
-from deepgram import (
-    DeepgramClient,
-    PrerecordedOptions,
-)
+# Third-party imports
+from deepgram import DeepgramClient, PrerecordedOptions
 from dotenv import load_dotenv
 from gi.repository import Gdk, GLib, Gtk
 
+# First-party imports
+from app_config import APP_CONFIG, AUDIO_CONFIG, COLORS, TIMING_CONFIG, get_config
 from deepgram_service import DeepgramService
+from paste_strategies import PasteStrategyManager
 from punctuation_controls import PunctuationControlsWidget
 from punctuation_processor import PunctuationProcessor
+from subprocess_utils import SubprocessManager
+
+
 
 # Lazy loading for enhancement module - only import when needed
 ENHANCEMENT_AVAILABLE = None
@@ -51,7 +54,8 @@ def _load_enhancement_module():
         ENHANCEMENT_AVAILABLE = True
         logger.info("Enhancement module loaded successfully")
     except ImportError as e:
-        logger.warning(f"enhance.py not found or incomplete. Prompt Mode will be disabled. Error: {e}")
+        logger.warning(
+            f"enhance.py not found or incomplete. Prompt Mode will be disabled. Error: {e}")
         ENHANCEMENT_AVAILABLE = False
 
     return ENHANCEMENT_AVAILABLE
@@ -119,7 +123,8 @@ if not DEEPGRAM_API_KEY:
 
 # Get configuration values
 SAMPLE_RATE = get_config("AUDIO", "SAMPLE_RATE", AUDIO_CONFIG["SAMPLE_RATE"])
-CHUNK_DURATION = get_config("AUDIO", "CHUNK_DURATION", AUDIO_CONFIG["CHUNK_DURATION"])
+CHUNK_DURATION = get_config(
+    "AUDIO", "CHUNK_DURATION", AUDIO_CONFIG["CHUNK_DURATION"])
 HISTORY_FILE = APP_CONFIG["HISTORY_FILE"]
 APP_TITLE = APP_CONFIG["TITLE"]
 
@@ -179,7 +184,8 @@ class VoiceTranscribeApp:
             self.deepgram_client = DeepgramClient(DEEPGRAM_API_KEY)
             self.deepgram_service = DeepgramService(
                 self.deepgram_client,
-                on_transcript=lambda text, is_final: GLib.idle_add(self._update_live_transcript, text, is_final),
+                on_transcript=lambda text, is_final: GLib.idle_add(
+                    self._update_live_transcript, text, is_final),
                 on_reconnect=lambda attempt: GLib.idle_add(
                     self.status_label.set_text,
                     f"Reconnecting... ({attempt}/{self.max_retries})",
@@ -187,7 +193,8 @@ class VoiceTranscribeApp:
                 max_retries=self.max_retries,
                 punctuation_sensitivity=self.deepgram_config["punctuation_sensitivity"],
                 endpointing_ms=self.deepgram_config["endpointing_ms"],
-                custom_keyterms=self.deepgram_config.get("custom_keyterms", []),
+                custom_keyterms=self.deepgram_config.get(
+                    "custom_keyterms", []),
             )
 
         # Create window
@@ -212,7 +219,8 @@ class VoiceTranscribeApp:
         # Threading controls for background audio monitoring
         self.stop_audio = threading.Event()
         self.input_stream = None
-        self.monitor_thread = threading.Thread(target=self._monitor_audio, daemon=True)
+        self.monitor_thread = threading.Thread(
+            target=self._monitor_audio, daemon=True)
         self.monitor_thread.start()
 
         # Start elapsed time updater
@@ -387,17 +395,20 @@ class VoiceTranscribeApp:
 
         # Ctrl+H to open history window
         key, modifier = Gtk.accelerator_parse("<Control>h")
-        accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE, self.show_history_accelerator)
+        accel_group.connect(
+            key, modifier, Gtk.AccelFlags.VISIBLE, self.show_history_accelerator)
 
         # Ctrl+Shift+Q for Prompt Mode toggle
         if _load_enhancement_module():
             key, modifier = Gtk.accelerator_parse("<Control><Shift>q")
-            accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE, self.toggle_prompt_mode_accelerator)
+            accel_group.connect(
+                key, modifier, Gtk.AccelFlags.VISIBLE, self.toggle_prompt_mode_accelerator)
 
         # Ctrl+D for Performance Dashboard
         if _load_enhancement_module() and MODEL_CONFIG_AVAILABLE:
             key, modifier = Gtk.accelerator_parse("<Control>d")
-            accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE, self.show_performance_dashboard_accelerator)
+            accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
+                                self.show_performance_dashboard_accelerator)
 
     def create_ui(self):
         """Create the user interface"""
@@ -409,7 +420,8 @@ class VoiceTranscribeApp:
         main_box.set_margin_end(20)
 
         # Header box with stats on left, prompt controls on right
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        header_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         header_box.get_style_context().add_class("header-box")
 
         # Left side: Status and stats
@@ -447,7 +459,8 @@ class VoiceTranscribeApp:
         header_box.pack_start(Gtk.Label(), True, True, 0)
 
         # Right side: Controls container
-        right_controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        right_controls = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=10)
 
         # Punctuation controls (always visible)
         self.punctuation_controls = PunctuationControlsWidget(self)
@@ -455,13 +468,15 @@ class VoiceTranscribeApp:
 
         # Prompt Mode controls
         if _load_enhancement_module():
-            prompt_controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            prompt_controls = Gtk.Box(
+                orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             prompt_controls.get_style_context().add_class("prompt-controls")
 
             # Prompt Mode checkbox
             self.prompt_mode_check = Gtk.CheckButton(label="Prompt Mode")
             self.prompt_mode_check.set_active(self.prompt_mode_enabled)
-            self.prompt_mode_check.connect("toggled", self.on_prompt_mode_toggled)
+            self.prompt_mode_check.connect(
+                "toggled", self.on_prompt_mode_toggled)
             prompt_controls.pack_start(self.prompt_mode_check, False, False, 0)
 
             # Style label
@@ -472,7 +487,8 @@ class VoiceTranscribeApp:
             self.style_combo = Gtk.ComboBoxText()
             for style in get_enhancement_styles():
                 self.style_combo.append_text(style.capitalize())
-            self.style_combo.set_active(get_enhancement_styles().index(self.enhancement_style))
+            self.style_combo.set_active(
+                get_enhancement_styles().index(self.enhancement_style))
             self.style_combo.connect("changed", self.on_style_changed)
             prompt_controls.pack_start(self.style_combo, False, False, 0)
 
@@ -494,13 +510,15 @@ class VoiceTranscribeApp:
                 self.model_combo.append_text("GPT-4o Mini")
                 self.model_combo.set_active(0)
                 self.model_combo.set_sensitive(False)
-                self.model_combo.set_tooltip_text("Model configuration not available")
+                self.model_combo.set_tooltip_text(
+                    "Model configuration not available")
 
             prompt_controls.pack_start(self.model_combo, False, False, 0)
 
             # Performance dashboard button
             dashboard_button = Gtk.Button(label="📊")
-            dashboard_button.connect("clicked", self.show_performance_dashboard)
+            dashboard_button.connect(
+                "clicked", self.show_performance_dashboard)
             dashboard_button.get_style_context().add_class("action-button")
             dashboard_button.set_tooltip_text("Open Performance Dashboard")
             prompt_controls.pack_start(dashboard_button, False, False, 0)
@@ -520,7 +538,8 @@ class VoiceTranscribeApp:
         button_box.pack_start(self.button, False, False, 0)
 
         # Shortcut hints
-        shortcuts_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        shortcuts_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         shortcuts_box.set_halign(Gtk.Align.CENTER)
 
         record_hint = Gtk.Label(label="Ctrl+Q: Toggle Recording")
@@ -563,7 +582,8 @@ class VoiceTranscribeApp:
         main_box.pack_start(status_box, False, False, 0)
 
         # Clear button header (aligned right)
-        clear_header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        clear_header = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 
         # Spacer
         clear_header.pack_start(Gtk.Label(), True, True, 0)
@@ -585,13 +605,16 @@ class VoiceTranscribeApp:
         main_box.pack_start(clear_header, False, False, 5)
 
         # Side-by-side transcript panels
-        panels_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        panels_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 
         # Original transcript panel
-        original_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        original_panel = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=5)
 
         # Original header with copy button
-        original_header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        original_header_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 
         original_header = Gtk.Label(label="Original Transcript")
         original_header.get_style_context().add_class("panel-header")
@@ -605,13 +628,15 @@ class VoiceTranscribeApp:
         self.copy_original_button.connect("clicked", self.copy_original)
         self.copy_original_button.get_style_context().add_class("action-button")
         self.copy_original_button.set_sensitive(False)
-        original_header_box.pack_start(self.copy_original_button, False, False, 0)
+        original_header_box.pack_start(
+            self.copy_original_button, False, False, 0)
 
         original_panel.pack_start(original_header_box, False, False, 0)
 
         # Original transcript scroll
         original_scroll = Gtk.ScrolledWindow()
-        original_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        original_scroll.set_policy(
+            Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         original_scroll.set_min_content_height(200)
         original_scroll.get_style_context().add_class("transcript-view")
 
@@ -634,10 +659,12 @@ class VoiceTranscribeApp:
 
         # Enhanced prompt panel (only if enhancement available)
         if _load_enhancement_module():
-            enhanced_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+            enhanced_panel = Gtk.Box(
+                orientation=Gtk.Orientation.VERTICAL, spacing=5)
 
             # Enhanced header with copy button
-            enhanced_header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            enhanced_header_box = Gtk.Box(
+                orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 
             enhanced_header = Gtk.Label(label="✨ Enhanced Prompt")
             enhanced_header.get_style_context().add_class("panel-header")
@@ -651,13 +678,15 @@ class VoiceTranscribeApp:
             self.copy_enhanced_button.connect("clicked", self.copy_enhanced)
             self.copy_enhanced_button.get_style_context().add_class("action-button")
             self.copy_enhanced_button.set_sensitive(False)
-            enhanced_header_box.pack_start(self.copy_enhanced_button, False, False, 0)
+            enhanced_header_box.pack_start(
+                self.copy_enhanced_button, False, False, 0)
 
             enhanced_panel.pack_start(enhanced_header_box, False, False, 0)
 
             # Enhanced prompt scroll
             enhanced_scroll = Gtk.ScrolledWindow()
-            enhanced_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            enhanced_scroll.set_policy(
+                Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
             enhanced_scroll.set_min_content_height(200)
             enhanced_scroll.get_style_context().add_class("enhanced-view")
 
@@ -670,7 +699,8 @@ class VoiceTranscribeApp:
             self.enhanced_text_view.set_margin_bottom(10)
 
             buffer = self.enhanced_text_view.get_buffer()
-            buffer.set_text("Enhanced prompt will appear here when Prompt Mode is enabled...")
+            buffer.set_text(
+                "Enhanced prompt will appear here when Prompt Mode is enabled...")
 
             enhanced_scroll.add(self.enhanced_text_view)
             enhanced_panel.pack_start(enhanced_scroll, True, True, 0)
@@ -731,7 +761,8 @@ class VoiceTranscribeApp:
         self.performance_window = Gtk.Window(title="Performance Dashboard")
         self.performance_window.set_default_size(800, 600)
         self.performance_window.set_transient_for(self.window)
-        self.performance_window.connect("destroy", lambda _w: setattr(self, "performance_window", None))
+        self.performance_window.connect(
+            "destroy", lambda _w: setattr(self, "performance_window", None))
 
         # Create dashboard content
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -756,16 +787,19 @@ class VoiceTranscribeApp:
 
         # Model Comparison Tab
         comparison_tab = self._create_model_comparison_tab()
-        notebook.append_page(comparison_tab, Gtk.Label(label="Model Comparison"))
+        notebook.append_page(
+            comparison_tab, Gtk.Label(label="Model Comparison"))
 
         # Performance Metrics Tab
         performance_tab = self._create_performance_metrics_tab()
-        notebook.append_page(performance_tab, Gtk.Label(label="Performance Metrics"))
+        notebook.append_page(performance_tab, Gtk.Label(
+            label="Performance Metrics"))
 
         main_box.pack_start(notebook, True, True, 0)
 
         # Refresh button
-        refresh_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        refresh_box = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         refresh_box.set_halign(Gtk.Align.END)
 
         refresh_button = Gtk.Button(label="Refresh Data")
@@ -807,7 +841,8 @@ class VoiceTranscribeApp:
 
                 if usage_stats:
                     stats_frame = Gtk.Frame(label="Model Usage Statistics")
-                    stats_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+                    stats_box = Gtk.Box(
+                        orientation=Gtk.Orientation.VERTICAL, spacing=5)
                     stats_box.set_margin_top(10)
                     stats_box.set_margin_bottom(10)
                     stats_box.set_margin_start(10)
@@ -826,11 +861,13 @@ class VoiceTranscribeApp:
                     stats_frame.add(stats_box)
                     vbox.pack_start(stats_frame, False, False, 0)
                 else:
-                    no_data_label = Gtk.Label(label="No usage data available yet.")
+                    no_data_label = Gtk.Label(
+                        label="No usage data available yet.")
                     vbox.pack_start(no_data_label, False, False, 0)
 
             except Exception as e:
-                error_label = Gtk.Label(label=f"Error loading usage statistics: {e}")
+                error_label = Gtk.Label(
+                    label=f"Error loading usage statistics: {e}")
                 vbox.pack_start(error_label, False, False, 0)
 
         scroll.add(vbox)
@@ -883,7 +920,8 @@ class VoiceTranscribeApp:
 
                 # Model name with availability indicator
                 availability = "✓" if model.is_available() else "⏳"
-                name_label = Gtk.Label(label=f"{availability} {model.display_name}")
+                name_label = Gtk.Label(
+                    label=f"{availability} {model.display_name}")
                 name_label.set_halign(Gtk.Align.START)
                 grid.attach(name_label, col, row, 1, 1)
                 col += 1
@@ -891,20 +929,23 @@ class VoiceTranscribeApp:
                 # Tier with color
                 tier_info = model.get_tier_info()
                 tier_label = Gtk.Label()
-                tier_label.set_markup(f'<span foreground="{tier_info["color"]}">{tier_info["tier"].upper()}</span>')
+                tier_label.set_markup(
+                    f'<span foreground="{tier_info["color"]}">{tier_info["tier"].upper()}</span>')
                 tier_label.set_halign(Gtk.Align.START)
                 grid.attach(tier_label, col, row, 1, 1)
                 col += 1
 
                 # Context window (human readable)
-                context_display = self._format_context_window(model.context_window)
+                context_display = self._format_context_window(
+                    model.context_window)
                 context_label = Gtk.Label(label=context_display)
                 context_label.set_halign(Gtk.Align.START)
                 grid.attach(context_label, col, row, 1, 1)
                 col += 1
 
                 # Max output tokens
-                output_display = f"{model.output_token_limit:,}" if hasattr(model, "output_token_limit") else "4,096"
+                output_display = f"{model.output_token_limit:,}" if hasattr(
+                    model, "output_token_limit") else "4,096"
                 output_label = Gtk.Label(label=output_display)
                 output_label.set_halign(Gtk.Align.START)
                 grid.attach(output_label, col, row, 1, 1)
@@ -1118,8 +1159,10 @@ class VoiceTranscribeApp:
             self.model_combo.remove_all()
 
             # Add models grouped by tier with visual indicators
-            tier_icons = {"economy": "🟢", "standard": "🔵", "premium": "🟣", "flagship": "🟡"}
-            tier_colors = {"economy": "Economy", "standard": "Standard", "premium": "Premium", "flagship": "Flagship"}
+            tier_icons = {"economy": "🟢", "standard": "🔵",
+                          "premium": "🟣", "flagship": "🟡"}
+            tier_colors = {"economy": "Economy", "standard": "Standard",
+                           "premium": "Premium", "flagship": "Flagship"}
 
             for tier_name in ["economy", "standard", "premium", "flagship"]:
                 if models_by_tier[tier_name]:
@@ -1228,7 +1271,8 @@ class VoiceTranscribeApp:
         model_config = model_registry.get(model_id)
         if model_config:
             tier_info = model_config.get_tier_info()
-            self.status_label.set_text(f"Model: {model_config.display_name} ({tier_info['tier']})")
+            self.status_label.set_text(
+                f"Model: {model_config.display_name} ({tier_info['tier']})")
             GLib.timeout_add_seconds(2, self._reset_status)
 
     def track_model_usage(self, model_key):
@@ -1237,7 +1281,8 @@ class VoiceTranscribeApp:
 
         # Initialize if needed
         if model_key not in usage_stats:
-            usage_stats[model_key] = {"count": 0, "total_tokens": 0, "avg_latency": 0, "user_rating": []}
+            usage_stats[model_key] = {
+                "count": 0, "total_tokens": 0, "avg_latency": 0, "user_rating": []}
 
         usage_stats[model_key]["count"] += 1
         self.config["model_usage_stats"] = usage_stats
@@ -1270,19 +1315,24 @@ class VoiceTranscribeApp:
         self.config["enhancement_style"] = self.enhancement_style
         self.config["history_enabled"] = self.history_enabled
         self.config["history_limit"] = self.history_limit
-        self.config["selected_model"] = getattr(self, "selected_model", "gpt-4o-mini")
+        self.config["selected_model"] = getattr(
+            self, "selected_model", "gpt-4o-mini")
         self.config["model_preferences"] = getattr(
-            self, "model_preferences", {"auto_fallback": True, "log_token_usage": True}
+            self, "model_preferences", {
+                "auto_fallback": True, "log_token_usage": True}
         )
         self.config["deepgram_config"] = getattr(
-            self, "deepgram_config", {"punctuation_sensitivity": "balanced", "endpointing_ms": 400}
+            self, "deepgram_config", {
+                "punctuation_sensitivity": "balanced", "endpointing_ms": 400}
         )
         self.config["punctuation_processing"] = getattr(
             self,
             "punctuation_config",
-            {"enabled": True, "merge_threshold_ms": 800, "min_sentence_length": 3, "fragment_sensitivity": "balanced"},
+            {"enabled": True, "merge_threshold_ms": 800,
+                "min_sentence_length": 3, "fragment_sensitivity": "balanced"},
         )
-        self.config["fragment_processing"] = getattr(self, "fragment_processing_config", {"enabled": True})
+        self.config["fragment_processing"] = getattr(
+            self, "fragment_processing_config", {"enabled": True})
 
         # Save the config
         try:
@@ -1302,22 +1352,28 @@ class VoiceTranscribeApp:
                 # Store the entire config for later use
                 self.config = prefs
                 # Also set individual attributes for backward compatibility
-                self.prompt_mode_enabled = prefs.get("prompt_mode_enabled", False)
-                self.enhancement_style = prefs.get("enhancement_style", "balanced")
+                self.prompt_mode_enabled = prefs.get(
+                    "prompt_mode_enabled", False)
+                self.enhancement_style = prefs.get(
+                    "enhancement_style", "balanced")
                 self.history_enabled = prefs.get("history_enabled", True)
                 self.history_limit = prefs.get("history_limit", 500)
-                self.selected_model = prefs.get("selected_model", "gpt-4o-mini")
+                self.selected_model = prefs.get(
+                    "selected_model", "gpt-4o-mini")
                 self.model_preferences = prefs.get(
-                    "model_preferences", {"auto_fallback": True, "log_token_usage": True}
+                    "model_preferences", {
+                        "auto_fallback": True, "log_token_usage": True}
                 )
                 # Load Deepgram configuration with migration support
                 self.deepgram_config = prefs.get(
                     "deepgram_config",
-                    {"punctuation_sensitivity": "balanced", "endpointing_ms": 400, "custom_keyterms": []},
+                    {"punctuation_sensitivity": "balanced",
+                        "endpointing_ms": 400, "custom_keyterms": []},
                 )
                 # Validate custom_keyterms is a list
                 if not isinstance(self.deepgram_config.get("custom_keyterms"), list):
-                    logging.warning("Invalid custom_keyterms in config, using empty list")
+                    logging.warning(
+                        "Invalid custom_keyterms in config, using empty list")
                     self.deepgram_config["custom_keyterms"] = []
                 # Load punctuation processing configuration
                 self.punctuation_config = prefs.get(
@@ -1330,18 +1386,21 @@ class VoiceTranscribeApp:
                     },
                 )
                 # Load fragment processing configuration
-                self.fragment_processing_config = prefs.get("fragment_processing", {"enabled": True})
+                self.fragment_processing_config = prefs.get(
+                    "fragment_processing", {"enabled": True})
         except (OSError, json.JSONDecodeError) as e:
             logging.error("Failed to load preferences: %s", e)
             print("Unable to load preferences. Defaults will be used.")
             # Use defaults if no config exists or file is invalid
             self.selected_model = "gpt-4o-mini"
-            self.model_preferences = {"auto_fallback": True, "log_token_usage": True}
+            self.model_preferences = {
+                "auto_fallback": True, "log_token_usage": True}
             self.prompt_mode_enabled = False
             self.enhancement_style = "balanced"
             self.history_enabled = True
             self.history_limit = 500
-            self.deepgram_config = {"punctuation_sensitivity": "balanced", "endpointing_ms": 400, "custom_keyterms": []}
+            self.deepgram_config = {
+                "punctuation_sensitivity": "balanced", "endpointing_ms": 400, "custom_keyterms": []}
             self.punctuation_config = {
                 "enabled": True,
                 "merge_threshold_ms": 800,
@@ -1378,12 +1437,15 @@ class VoiceTranscribeApp:
             "lenient": 0.5,  # More aggressive merging
         }
 
-        fragment_threshold = sensitivity_map.get(self.punctuation_config.get("fragment_sensitivity", "balanced"), 0.7)
+        fragment_threshold = sensitivity_map.get(
+            self.punctuation_config.get("fragment_sensitivity", "balanced"), 0.7)
 
         try:
             self.punctuation_processor = PunctuationProcessor(
-                merge_threshold_ms=self.punctuation_config.get("merge_threshold_ms", 800),
-                min_sentence_length=self.punctuation_config.get("min_sentence_length", 3),
+                merge_threshold_ms=self.punctuation_config.get(
+                    "merge_threshold_ms", 800),
+                min_sentence_length=self.punctuation_config.get(
+                    "min_sentence_length", 3),
                 fragment_threshold=fragment_threshold,
                 max_pending_fragments=5,  # Keep buffer size manageable
             )
@@ -1425,7 +1487,7 @@ class VoiceTranscribeApp:
             with open(HISTORY_FILE) as f:
                 lines = f.readlines()
             if len(lines) > self.history_limit:
-                lines = lines[-self.history_limit :]
+                lines = lines[-self.history_limit:]
                 with open(HISTORY_FILE, "w") as f:
                     f.writelines(lines)
         except OSError as e:
@@ -1439,7 +1501,8 @@ class VoiceTranscribeApp:
 
         self.history_window = Gtk.Window(title="History")
         self.history_window.set_default_size(600, 400)
-        self.history_window.connect("destroy", lambda _w: setattr(self, "history_window", None))
+        self.history_window.connect(
+            "destroy", lambda _w: setattr(self, "history_window", None))
 
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         vbox.set_margin_top(10)
@@ -1474,7 +1537,8 @@ class VoiceTranscribeApp:
             if enhanced:
                 style = entry.get("style", "")
                 row_e = Gtk.ListBoxRow()
-                label_e = Gtk.Label(label=f"{ts} [{style}] - {enhanced}", xalign=0)
+                label_e = Gtk.Label(
+                    label=f"{ts} [{style}] - {enhanced}", xalign=0)
                 label_e.set_line_wrap(True)
                 row_e.add(label_e)
                 row_e.transcript = enhanced
@@ -1498,7 +1562,8 @@ class VoiceTranscribeApp:
         """Restart Deepgram service with updated punctuation settings"""
         try:
             if self.recording and self.deepgram_service and self.deepgram_service.is_connected():
-                logging.info("Restarting Deepgram service with new settings...")
+                logging.info(
+                    "Restarting Deepgram service with new settings...")
 
                 # Store old service reference
                 old_service = self.deepgram_service
@@ -1506,7 +1571,8 @@ class VoiceTranscribeApp:
                 # Create new service with updated config
                 self.deepgram_service = DeepgramService(
                     self.deepgram_client,
-                    on_transcript=lambda text, is_final: GLib.idle_add(self._update_live_transcript, text, is_final),
+                    on_transcript=lambda text, is_final: GLib.idle_add(
+                        self._update_live_transcript, text, is_final),
                     on_reconnect=lambda attempt: GLib.idle_add(
                         self.status_label.set_text,
                         f"Reconnecting... ({attempt}/{self.max_retries})",
@@ -1515,7 +1581,8 @@ class VoiceTranscribeApp:
                     punctuation_sensitivity=self.config.get("deepgram_config", {}).get(
                         "punctuation_sensitivity", "balanced"
                     ),
-                    endpointing_ms=self.config.get("deepgram_config", {}).get("endpointing_ms", 400),
+                    endpointing_ms=self.config.get(
+                        "deepgram_config", {}).get("endpointing_ms", 400),
                 )
 
                 # Connect the new service
@@ -1592,9 +1659,11 @@ class VoiceTranscribeApp:
                         logging.debug("Finalizing WebSocket stream")
                         success = self.deepgram_service.finalize()
                         if success:
-                            GLib.idle_add(self._show_transcript, self.confirmed_text.strip())
+                            GLib.idle_add(self._show_transcript,
+                                          self.confirmed_text.strip())
                         else:
-                            threading.Thread(target=self._process_audio).start()
+                            threading.Thread(
+                                target=self._process_audio).start()
                     except Exception as e:
                         logging.debug("WebSocket close error: %s", e)
                         threading.Thread(target=self._process_audio).start()
@@ -1742,11 +1811,13 @@ class VoiceTranscribeApp:
     def _transcribe(self, audio_bytes):
         """Transcribe audio using Deepgram"""
         try:
-            options = PrerecordedOptions(model="nova-3", language="en", punctuate=True, smart_format=True)
+            options = PrerecordedOptions(
+                model="nova-3", language="en", punctuate=True, smart_format=True)
 
             source = {"buffer": audio_bytes, "mimetype": "audio/wav"}
 
-            response = self.deepgram_client.listen.rest.v("1").transcribe_file(source=source, options=options)
+            response = self.deepgram_client.listen.rest.v(
+                "1").transcribe_file(source=source, options=options)
 
             # Extract transcript
             if hasattr(response, "results"):
@@ -1786,15 +1857,19 @@ class VoiceTranscribeApp:
         # Handle enhancement if Prompt Mode is enabled
         if _load_enhancement_module() and self.prompt_mode_enabled:
             # Show enhancing status
-            GLib.idle_add(self.enhancement_label.set_text, "✨ Enhancing prompt...")
+            GLib.idle_add(self.enhancement_label.set_text,
+                          "✨ Enhancing prompt...")
 
             # Show preview in enhanced view
             enhanced_buffer = self.enhanced_text_view.get_buffer()
-            preview = transcript[:50] + "..." if len(transcript) > 50 else transcript
-            enhanced_buffer.set_text(f"Enhancing: {preview}\n\n⏳ Please wait...")
+            preview = transcript[:50] + \
+                "..." if len(transcript) > 50 else transcript
+            enhanced_buffer.set_text(
+                f"Enhancing: {preview}\n\n⏳ Please wait...")
 
             # Enhance in background
-            threading.Thread(target=self._enhance_transcript, args=(transcript,)).start()
+            threading.Thread(target=self._enhance_transcript,
+                             args=(transcript,)).start()
         else:
             # Just copy original to clipboard
             self._copy_to_clipboard(transcript)
@@ -1806,10 +1881,12 @@ class VoiceTranscribeApp:
     def _enhance_transcript(self, transcript):
         """Enhance transcript in background"""
         # Get the selected model if available
-        model_key = self.config.get("selected_model", "gpt-4o-mini") if MODEL_CONFIG_AVAILABLE else None
+        model_key = self.config.get(
+            "selected_model", "gpt-4o-mini") if MODEL_CONFIG_AVAILABLE else None
 
         # Get fragment processing configuration
-        fragment_config = self.config.get("fragment_processing", {"enabled": True})
+        fragment_config = self.config.get(
+            "fragment_processing", {"enabled": True})
 
         enhanced, error = enhance_prompt(
             transcript, self.enhancement_style, model_key=model_key, fragment_processing_config=fragment_config
@@ -1837,10 +1914,13 @@ class VoiceTranscribeApp:
         # Estimate and add cost for this enhancement (thread-safe)
         if MODEL_CONFIG_AVAILABLE and _load_enhancement_module():
             try:
-                current_model = self.config.get("selected_model", "gpt-4o-mini")
-                estimated_cost = estimate_enhancement_cost(self.transcript_text, current_model)
+                current_model = self.config.get(
+                    "selected_model", "gpt-4o-mini")
+                estimated_cost = estimate_enhancement_cost(
+                    self.transcript_text, current_model)
                 # Use GLib.idle_add for thread safety
-                GLib.idle_add(lambda: self.add_to_session_cost(estimated_cost) or False)
+                GLib.idle_add(lambda: self.add_to_session_cost(
+                    estimated_cost) or False)
             except Exception as e:
                 print(f"Error estimating cost: {e}")
 
@@ -1858,13 +1938,15 @@ class VoiceTranscribeApp:
 
         # Update enhanced view
         buffer = self.enhanced_text_view.get_buffer()
-        buffer.set_text(f"Enhancement failed: {error}\n\nUsing original transcript.")
+        buffer.set_text(
+            f"Enhancement failed: {error}\n\nUsing original transcript.")
 
         # Copy original to clipboard as fallback
         self._copy_to_clipboard(self.transcript_text)
 
         # Clear error after delay
-        GLib.timeout_add_seconds(5, lambda: self.enhancement_label.set_text(""))
+        GLib.timeout_add_seconds(
+            5, lambda: self.enhancement_label.set_text(""))
 
     def _copy_to_clipboard(self, text):
         """Copy text to clipboard and update UI"""
@@ -1882,14 +1964,16 @@ class VoiceTranscribeApp:
         if self.transcript_text:
             pyperclip.copy(self.transcript_text)
             self.clipboard_label.set_text("✓ Copied Original to Clipboard!")
-            GLib.timeout_add_seconds(2, lambda: self.clipboard_label.set_text(""))
+            GLib.timeout_add_seconds(
+                2, lambda: self.clipboard_label.set_text(""))
 
     def copy_enhanced(self, widget):
         """Copy enhanced transcript to clipboard"""
         if self.enhanced_text:
             pyperclip.copy(self.enhanced_text)
             self.clipboard_label.set_text("✓ Copied Enhanced to Clipboard!")
-            GLib.timeout_add_seconds(2, lambda: self.clipboard_label.set_text(""))
+            GLib.timeout_add_seconds(
+                2, lambda: self.clipboard_label.set_text(""))
         else:
             # Fallback to original if no enhanced version
             self.copy_original(widget)
@@ -1906,7 +1990,8 @@ class VoiceTranscribeApp:
 
         if _load_enhancement_module():
             buffer = self.enhanced_text_view.get_buffer()
-            buffer.set_text("Enhanced prompt will appear here when Prompt Mode is enabled...")
+            buffer.set_text(
+                "Enhanced prompt will appear here when Prompt Mode is enabled...")
 
         # Reset counters
         self.word_count_label.set_text("Words: 0")
@@ -1937,7 +2022,8 @@ class VoiceTranscribeApp:
         cache_ttl = TIMING_CONFIG.get("TERMINAL_DETECTION_CACHE_TTL", 2)
 
         if self._terminal_cache is not None and current_time - self._terminal_cache_time < cache_ttl:
-            logger.debug(f"Using cached terminal detection result: {self._terminal_cache}")
+            logger.debug(
+                f"Using cached terminal detection result: {self._terminal_cache}")
             return self._terminal_cache
 
         # Perform actual detection
@@ -1997,7 +2083,8 @@ class VoiceTranscribeApp:
                 # Check for standard terminals
                 for terminal in terminal_classes:
                     if terminal in wm_class_output:
-                        logger.debug(f"Detected terminal via WM_CLASS (pattern: {terminal})")
+                        logger.debug(
+                            f"Detected terminal via WM_CLASS (pattern: {terminal})")
                         # Update cache
                         self._terminal_cache = True
                         self._terminal_cache_time = current_time
@@ -2008,13 +2095,15 @@ class VoiceTranscribeApp:
                     if code_pattern in wm_class_output or code_pattern in window_title:
                         # Check if "terminal" is in the window title (indicates terminal is focused)
                         if "terminal" in window_title or "bash" in window_title or "zsh" in window_title:
-                            logger.debug(f"Detected VS Code/Cursor terminal (title: {window_title})")
+                            logger.debug(
+                                f"Detected VS Code/Cursor terminal (title: {window_title})")
                             # Update cache
                             self._terminal_cache = True
                             self._terminal_cache_time = current_time
                             return True
                         else:
-                            logger.debug("VS Code/Cursor detected but not in terminal")
+                            logger.debug(
+                                "VS Code/Cursor detected but not in terminal")
                             # Update cache
                             self._terminal_cache = False
                             self._terminal_cache_time = current_time
@@ -2042,7 +2131,8 @@ class VoiceTranscribeApp:
                     if '"focused":true' in output:
                         for terminal in terminal_classes:
                             if terminal in output:
-                                logger.debug(f"Detected terminal on Wayland/Sway (pattern: {terminal})")
+                                logger.debug(
+                                    f"Detected terminal on Wayland/Sway (pattern: {terminal})")
                                 # Update cache
                                 self._terminal_cache = True
                                 self._terminal_cache_time = current_time
@@ -2062,7 +2152,8 @@ class VoiceTranscribeApp:
 
                     for terminal in terminal_classes:
                         if terminal in output:
-                            logger.debug(f"Detected terminal on Wayland/Hyprland (pattern: {terminal})")
+                            logger.debug(
+                                f"Detected terminal on Wayland/Hyprland (pattern: {terminal})")
                             # Update cache
                             self._terminal_cache = True
                             self._terminal_cache_time = current_time
@@ -2091,7 +2182,8 @@ class VoiceTranscribeApp:
         success = self.paste_manager.execute_paste(session_type, is_terminal)
 
         if not success:
-            logger.warning(f"Failed to auto-paste (session={session_type}, terminal={is_terminal})")
+            logger.warning(
+                f"Failed to auto-paste (session={session_type}, terminal={is_terminal})")
 
     def _reset_status(self):
         """Reset status to ready"""
@@ -2124,7 +2216,8 @@ class VoiceTranscribeApp:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Voice Transcribe")
     parser.add_argument("command", nargs="?", help="Optional command: toggle")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                        help="Enable debug logging")
     args = parser.parse_args()
 
     if args.verbose:
