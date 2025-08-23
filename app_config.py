@@ -65,10 +65,10 @@ DEFAULT_PREFERENCES = {
     "enhancement_style": "balanced",
     "punctuation_sensitivity": "balanced",
     "endpointing_threshold": 300,
-    "enable_profanity": False,
+    "enable_profanity": True,
     "enable_capitalization": True,
     "fragment_threshold": 0.85,
-    "custom_keyterms": [],  # Nova-3 keyterm prompting
+    "custom_keyterms": ["Codex CLI", "Gemini CLI", "GPT-4.1", ".md", ".txt", ".pdf"]  # Nova-3 keyterm prompting
 }
 
 
