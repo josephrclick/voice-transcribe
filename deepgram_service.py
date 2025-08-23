@@ -2,9 +2,8 @@
 
 import logging
 import threading
-from app_config import DEEPGRAM_CONFIG, get_config
 import time
-from typing import Callable, Optional, List
+from typing import Callable, Optional
 
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
@@ -41,78 +40,75 @@ class DeepgramService:
     # ------------------------------------------------------------------
     def _validate_keyterms(self, keyterms) -> Optional[list]:
         """Validate keyterms list according to Deepgram constraints.
-        
+
         Returns validated list of keyterms or None if invalid.
         """
         if not keyterms:
             return None
-        
+
         if not isinstance(keyterms, list):
             logging.warning("Invalid keyterms type, expected list")
             return None
-        
+
         # Deepgram limits - conservative estimates
         MAX_KEYTERMS = 100
         MAX_TERM_LENGTH = 100
-        
+
         validated = []
         for term in keyterms[:MAX_KEYTERMS]:
             if not isinstance(term, str):
                 logging.warning(f"Skipping non-string keyterm: {type(term)}")
                 continue
-            
+
             term = term.strip()
             if not term:
                 continue
-                
+
             if len(term) > MAX_TERM_LENGTH:
                 logging.warning(f"Truncating keyterm longer than {MAX_TERM_LENGTH} chars: {term[:20]}...")
                 term = term[:MAX_TERM_LENGTH]
-            
+
             validated.append(term)
-        
+
         if len(keyterms) > MAX_KEYTERMS:
             logging.warning(f"Too many keyterms ({len(keyterms)}), using first {MAX_KEYTERMS}")
-        
+
         return validated if validated else None
-    
+
     def _get_live_options(self) -> LiveOptions:
         """Generate Deepgram LiveOptions based on user preferences."""
-        
+
         # Punctuation mapping
         punctuation_config = {
             "off": {"punctuate": False, "smart_format": False},
             "minimal": {"punctuate": True, "smart_format": False},
             "balanced": {"punctuate": True, "smart_format": True},
-            "aggressive": {"punctuate": True, "smart_format": True, "diarize": True}
+            "aggressive": {"punctuate": True, "smart_format": True, "diarize": True},
         }
-        
-        config = punctuation_config.get(
-            self.punctuation_sensitivity, 
-            punctuation_config["balanced"]
-        )
-        
+
+        config = punctuation_config.get(self.punctuation_sensitivity, punctuation_config["balanced"])
+
         # Get and validate custom keyterms if available
-        keyterms = self._validate_keyterms(getattr(self, 'custom_keyterms', None))
-        
+        keyterms = self._validate_keyterms(getattr(self, "custom_keyterms", None))
+
         options = {
-            "model": "nova-3",                 # Keep nova-3 as recommended
+            "model": "nova-3",  # Keep nova-3 as recommended
             "language": "en-US",
             "endpointing": self.endpointing_ms,  # Key fix: increase from 10ms default
-            "utterance_end_ms": 1000,           # Detect longer pauses
-            "vad_events": True,                 # Enable VAD
-            "interim_results": True,            # Required for utterance detection
-            "paragraphs": True,                 # Better formatting for long transcripts
-            **config,                           # Apply punctuation settings
+            "utterance_end_ms": 1000,  # Detect longer pauses
+            "vad_events": True,  # Enable VAD
+            "interim_results": True,  # Required for utterance detection
+            "paragraphs": True,  # Better formatting for long transcripts
+            **config,  # Apply punctuation settings
             "encoding": "linear16",
             "sample_rate": 16000,
             "channels": 1,
         }
-        
+
         # Add keyterm if provided (Nova-3 specific)
         if keyterms:
             options["keyterm"] = keyterms
-            
+
         return LiveOptions(**options)
 
     def start(self) -> None:
@@ -126,7 +122,7 @@ class DeepgramService:
         while attempt < self.max_retries:
             try:
                 ws = self.client.listen.websocket.v("1")
-                
+
                 # Register all event handlers
                 ws.on(LiveTranscriptionEvents.Transcript, self._handle_transcript)
                 ws.on(LiveTranscriptionEvents.Close, self._handle_close)
@@ -159,11 +155,7 @@ class DeepgramService:
         is_final = False
         try:
             if isinstance(result, dict):
-                transcript = (
-                    result.get("channel", {})
-                    .get("alternatives", [{}])[0]
-                    .get("transcript", "")
-                )
+                transcript = result.get("channel", {}).get("alternatives", [{}])[0].get("transcript", "")
                 is_final = result.get("is_final", False)
             else:
                 transcript = result.channel.alternatives[0].transcript
@@ -199,31 +191,31 @@ class DeepgramService:
         logging.debug("Speech started detected")
         # Could emit a signal here for UI feedback if needed
         # For now, just log for debugging
-        
+
     def _handle_utterance_end(self, _client, *args, **kwargs) -> None:
         """Handle utterance end events to detect speech boundaries."""
         logging.debug("Utterance ended")
         # This helps segment natural speech boundaries
         # Could be used to trigger UI updates or finalization logic
-        
+
     def _handle_metadata(self, _client, metadata, **kwargs) -> None:
         """Handle metadata events for debugging and monitoring."""
         try:
             # Check if metadata exists first
             if not metadata:
                 return
-            
+
             # Use getattr with defaults instead of hasattr
-            request_id = getattr(metadata, 'request_id', None)
+            request_id = getattr(metadata, "request_id", None)
             if request_id:
                 logging.debug(f"Deepgram request ID: {request_id}")
-            
-            model_info = getattr(metadata, 'model_info', None)
+
+            model_info = getattr(metadata, "model_info", None)
             if model_info:
                 logging.debug(f"Model info: {model_info}")
         except Exception as exc:
             logging.debug(f"Metadata parse error: {exc}")
-            
+
     def _handle_error(self, _client, error, **kwargs) -> None:
         """Handle error events with enhanced recovery."""
         logging.error(f"Deepgram error: {error}")
@@ -289,4 +281,3 @@ class DeepgramService:
             # Ensure cleanup even on error
             self.ws = None
         return False  # Don't suppress exceptions
-

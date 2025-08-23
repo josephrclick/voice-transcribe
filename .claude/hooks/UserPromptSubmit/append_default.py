@@ -1,5 +1,6 @@
-import sys
 import json
+import sys
+
 
 def main() -> None:
     try:
@@ -11,6 +12,7 @@ def main() -> None:
     except Exception as e:  # pragma: no cover
         print(f"append_digest error: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,60 @@
+[tool.ruff]
+# Keep lines readable without excessive wrapping; many files approach ~110–120.
+line-length = 120
+# Conservative target for broad compatibility unless specified elsewhere.
+target-version = "py38"
+# Exclude non-source and generated content from lint/format runs.
+exclude = [
+    ".git",
+    "__pycache__",
+    ".pytest_cache",
+    "venv",
+    ".venv",
+    "build",
+    "dist",
+    "logs",
+    "images",
+    "docs/**",
+    "test.wav",
+]
+
+[tool.ruff.lint]
+# Solid, pragmatic baseline: pycodestyle/flake8 core, import sorting, modernizations,
+# naming consistency, comprehensions/simplify, perf, and Ruff-native checks.
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "PERF",# perflint
+    "RUF", # ruff-specific rules
+]
+# Let the formatter handle long lines; many legitimate long strings exist.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# Treat project modules as first-party for proper grouping.
+known-first-party = [
+    "app_config",
+    "deepgram_service",
+    "enhance",
+    "model_config",
+    "paste_strategies",
+    "punctuation_controls",
+    "punctuation_processor",
+    "subprocess_utils",
+    "terminal_config",
+    "main",
+]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.format]
+# Match project’s use of spaces and prefer double quotes for consistency.
+indent-style = "space"
+quote-style = "double"
+line-ending = "lf"
+

@@ -6,48 +6,49 @@ These tests validate the punctuation processing system against realistic
 speech patterns and use cases that users encounter in daily usage.
 """
 
-import unittest
-import sys
 import os
-from typing import List, Tuple
+import sys
+import unittest
+from typing import List
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from punctuation_processor import PunctuationProcessor
-from enhance import FragmentProcessor
 from test_data_generator import TestDataGenerator, TranscriptEvent
+
+from enhance import FragmentProcessor
+from punctuation_processor import PunctuationProcessor
 
 
 class TestUserAcceptanceScenarios(unittest.TestCase):
     """Test realistic user scenarios with expected behaviors"""
-    
+
     def setUp(self):
         """Set up test fixtures"""
         self.punct_processor = PunctuationProcessor()
         self.frag_processor = FragmentProcessor()
         self.data_generator = TestDataGenerator(seed=42)
-    
+
     def process_transcript_stream(self, events: List[TranscriptEvent]) -> str:
         """Process a stream of transcript events and return final text"""
         results = []
         fragments = []
-        
+
         for event in events:
             result, fragments = self.punct_processor.process_transcript(
                 event.text, event.is_final, event.timestamp, fragments
             )
             if result:
                 results.append(result)
-        
+
         # Flush any remaining fragments
         if fragments:
             final_result, _ = self.punct_processor.flush_pending_fragments(fragments)
             if final_result:
                 results.append(final_result)
-        
+
         return " ".join(results)
-    
+
     def test_business_meeting_scenario(self):
         """Test transcription of a typical business meeting"""
         meeting_events = [
@@ -63,18 +64,18 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("we need to address", True, 7200),
             TranscriptEvent("the supply chain issues", True, 7400),
         ]
-        
+
         result = self.process_transcript_stream(meeting_events)
-        
+
         # Should maintain professional structure
         self.assertIn("Good morning everyone", result)
         self.assertIn("Revenue is up", result)
         # Should not have excessive fragmentation
-        self.assertLess(result.count('.'), 6)
+        self.assertLess(result.count("."), 6)
         # Key business terms preserved
         self.assertIn("quarterly review", result.lower())
         self.assertIn("supply chain", result.lower())
-    
+
     def test_technical_support_call(self):
         """Test technical support conversation"""
         support_events = [
@@ -91,9 +92,9 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("but the problem", True, 5400),
             TranscriptEvent("persists", True, 5600),
         ]
-        
+
         result = self.process_transcript_stream(support_events)
-        
+
         # Should handle technical terms
         self.assertIn("computer", result.lower())
         self.assertIn("applications", result.lower())
@@ -101,7 +102,7 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
         self.assertIn("Have you tried", result)
         # Single word responses should be preserved
         self.assertIn("Yes", result)
-    
+
     def test_medical_consultation(self):
         """Test medical consultation with abbreviations"""
         medical_events = [
@@ -116,9 +117,9 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("Prescribed 500 mg", True, 4000),
             TranscriptEvent("twice daily", True, 4200),
         ]
-        
+
         result = self.process_transcript_stream(medical_events)
-        
+
         # Should preserve medical abbreviations
         self.assertIn("Dr.", result)
         self.assertIn("Jan.", result)
@@ -126,7 +127,7 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
         self.assertIn("120", result)
         self.assertIn("98.6", result)
         self.assertIn("500 mg", result)
-    
+
     def test_educational_lecture(self):
         """Test educational lecture with structured content"""
         lecture_events = [
@@ -143,9 +144,9 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("future developments", True, 7200),
             TranscriptEvent("and ethical considerations", True, 7400),
         ]
-        
+
         result = self.process_transcript_stream(lecture_events)
-        
+
         # Should preserve structure markers
         self.assertIn("First", result)
         self.assertIn("Second", result)
@@ -154,7 +155,7 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
         self.assertIn("artificial intelligence", result.lower())
         self.assertIn("healthcare", result.lower())
         self.assertIn("ethical considerations", result.lower())
-    
+
     def test_casual_conversation(self):
         """Test casual conversation with colloquialisms"""
         casual_events = [
@@ -168,16 +169,16 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("Sure", True, 4000),
             TranscriptEvent("let's go", True, 4200),
         ]
-        
+
         result = self.process_transcript_stream(casual_events)
-        
+
         # Should handle casual language
         self.assertIn("Hey", result)
         self.assertIn("what's up", result.lower())
         # Should preserve informal responses
         self.assertIn("Cool", result)
         self.assertIn("Sure", result)
-    
+
     def test_customer_service_interaction(self):
         """Test customer service phone interaction"""
         service_events = [
@@ -194,15 +195,15 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("May I have", True, 5600),
             TranscriptEvent("your order number", True, 5800),
         ]
-        
+
         result = self.process_transcript_stream(service_events)
-        
+
         # Should maintain polite phrasing
         self.assertIn("Thank you for calling", result)
         self.assertIn("How may I help you", result)
         # Should handle service terminology
         self.assertIn("order number", result.lower())
-    
+
     def test_news_broadcast_style(self):
         """Test news broadcast style speech"""
         news_events = [
@@ -218,9 +219,9 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("to debate", True, 4600),
             TranscriptEvent("the new bill", True, 4800),
         ]
-        
+
         result = self.process_transcript_stream(news_events)
-        
+
         # Should maintain news structure
         self.assertIn("Breaking news", result)
         self.assertIn("Meanwhile", result)
@@ -228,7 +229,7 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
         self.assertIn("Washington", result)
         # Should maintain formal tone
         self.assertIn("stock market", result.lower())
-    
+
     def test_recipe_instructions(self):
         """Test recipe/instructional content"""
         recipe_events = [
@@ -244,9 +245,9 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("Then", True, 5000),
             TranscriptEvent("add the wet ingredients", True, 5200),
         ]
-        
+
         result = self.process_transcript_stream(recipe_events)
-        
+
         # Should preserve instructional markers
         self.assertIn("First", result)
         self.assertIn("Next", result)
@@ -255,7 +256,7 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
         self.assertIn("350 degrees", result)
         self.assertIn("2 cups", result)
         self.assertIn("1 cup", result)
-    
+
     def test_legal_dictation(self):
         """Test legal/formal dictation"""
         legal_events = [
@@ -270,16 +271,16 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("agrees to", True, 4000),
             TranscriptEvent("the following terms", True, 4200),
         ]
-        
+
         result = self.process_transcript_stream(legal_events)
-        
+
         # Should preserve legal terminology
         self.assertIn("Pursuant to", result)
         self.assertIn("subsection", result.lower())
         self.assertIn("hereinafter", result.lower())
         # Should maintain formal structure
         self.assertIn("party of the first part", result.lower())
-    
+
     def test_sports_commentary(self):
         """Test sports commentary style"""
         sports_events = [
@@ -293,16 +294,16 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("this game", True, 3200),
             TranscriptEvent("Unbelievable", True, 4000),
         ]
-        
+
         result = self.process_transcript_stream(sports_events)
-        
+
         # Should handle excitement and short phrases
         self.assertIn("he shoots", result.lower())
         self.assertIn("he scores", result.lower())
         # Should preserve exclamations
         self.assertIn("What a goal", result)
         self.assertIn("Unbelievable", result)
-    
+
     def test_interruptions_and_corrections(self):
         """Test handling of interruptions and self-corrections"""
         correction_events = [
@@ -315,15 +316,15 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("let me check", True, 3200),
             TranscriptEvent("yes three o'clock", True, 3400),
         ]
-        
+
         result = self.process_transcript_stream(correction_events)
-        
+
         # Should handle corrections naturally
         self.assertIn("wait", result.lower())
         self.assertIn("sorry", result.lower())
         # Should preserve the corrected information
         self.assertIn("three", result.lower())
-    
+
     def test_multilingual_terms(self):
         """Test handling of foreign words and phrases"""
         multilingual_events = [
@@ -335,9 +336,9 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
             TranscriptEvent("and crème brûlée", True, 2400),
             TranscriptEvent("Very haute cuisine", True, 3000),
         ]
-        
+
         result = self.process_transcript_stream(multilingual_events)
-        
+
         # Should preserve foreign phrases
         self.assertIn("je ne sais quoi", result.lower())
         self.assertIn("al dente", result.lower())
@@ -346,55 +347,51 @@ class TestUserAcceptanceScenarios(unittest.TestCase):
 
 class TestEdgeCaseHandling(unittest.TestCase):
     """Test edge cases and error conditions in real usage"""
-    
+
     def setUp(self):
         """Set up test fixtures"""
         self.punct_processor = PunctuationProcessor()
         self.frag_processor = FragmentProcessor()
-    
+
     def test_very_long_continuous_speech(self):
         """Test handling of very long continuous speech without pauses"""
         # Generate 100 words without significant pauses
         words = [f"word{i}" for i in range(100)]
         long_text = " ".join(words)
-        
-        result, fragments = self.punct_processor.process_transcript(
-            long_text, True, 1000, []
-        )
-        
+
+        result, fragments = self.punct_processor.process_transcript(long_text, True, 1000, [])
+
         # Should handle long input without error
         self.assertIsNotNone(result or fragments)
-        
+
         # Process through fragment reconstruction
         if result:
             reconstructed = self.frag_processor.reconstruct_fragments(result)
             self.assertIsNotNone(reconstructed)
-    
+
     def test_rapid_fire_single_words(self):
         """Test rapid succession of single words"""
         results = []
         fragments = []
-        
+
         # 50 single words in rapid succession (20ms apart)
         for i in range(50):
-            result, fragments = self.punct_processor.process_transcript(
-                f"word{i}", True, 1000 + i * 20, fragments
-            )
+            result, fragments = self.punct_processor.process_transcript(f"word{i}", True, 1000 + i * 20, fragments)
             if result:
                 results.append(result)
-        
+
         # Flush remaining
         if fragments:
             final_result, _ = self.punct_processor.flush_pending_fragments(fragments)
             if final_result:
                 results.append(final_result)
-        
+
         # Should produce coherent output
         all_text = " ".join(results)
         self.assertGreater(len(all_text), 0)
         # Should merge many of the rapid-fire words
         self.assertLessEqual(len(results), 50)
-    
+
     def test_alternating_languages(self):
         """Test code-switching between languages (simulated)"""
         mixed_events = [
@@ -405,22 +402,20 @@ class TestEdgeCaseHandling(unittest.TestCase):
             ("Let's begin", 3000),
             ("Commençons", 3500),
         ]
-        
+
         results = []
         fragments = []
-        
+
         for text, timestamp in mixed_events:
-            result, fragments = self.punct_processor.process_transcript(
-                text, True, timestamp, fragments
-            )
+            result, fragments = self.punct_processor.process_transcript(text, True, timestamp, fragments)
             if result:
                 results.append(result)
-        
+
         # Should handle language switches
         all_text = " ".join(results)
         self.assertIn("Hello", all_text)
         self.assertIn("Bonjour", all_text)
-    
+
     def test_numbers_only_input(self):
         """Test input consisting only of numbers"""
         numeric_events = [
@@ -430,28 +425,26 @@ class TestEdgeCaseHandling(unittest.TestCase):
             ("3.14159", 2000),
             ("2.71828", 2200),
         ]
-        
+
         results = []
         fragments = []
-        
+
         for text, timestamp in numeric_events:
-            result, fragments = self.punct_processor.process_transcript(
-                text, True, timestamp, fragments
-            )
+            result, fragments = self.punct_processor.process_transcript(text, True, timestamp, fragments)
             if result:
                 results.append(result)
-        
+
         # Flush remaining
         if fragments:
             final_result, _ = self.punct_processor.flush_pending_fragments(fragments)
             if final_result:
                 results.append(final_result)
-        
+
         all_text = " ".join(results)
         # Should preserve numbers
         self.assertIn("123", all_text)
         self.assertIn("3.14159", all_text)
-    
+
     def test_special_characters_stress_test(self):
         """Test various special characters and symbols"""
         special_events = [
@@ -463,17 +456,15 @@ class TestEdgeCaseHandling(unittest.TestCase):
             ("A/B testing", 2000),
             ("24/7 support", 2200),
         ]
-        
+
         results = []
         fragments = []
-        
+
         for text, timestamp in special_events:
-            result, fragments = self.punct_processor.process_transcript(
-                text, True, timestamp, fragments
-            )
+            result, fragments = self.punct_processor.process_transcript(text, True, timestamp, fragments)
             if result:
                 results.append(result)
-        
+
         all_text = " ".join(results)
         # Should preserve special characters
         self.assertIn("@", all_text)
@@ -484,5 +475,5 @@ class TestEdgeCaseHandling(unittest.TestCase):
         self.assertIn("/", all_text)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main(verbosity=2)
