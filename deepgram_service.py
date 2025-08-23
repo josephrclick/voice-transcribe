@@ -4,7 +4,7 @@ import logging
 import threading
 from app_config import DEEPGRAM_CONFIG, get_config
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
@@ -24,6 +24,7 @@ class DeepgramService:
         max_retries: int = 5,
         punctuation_sensitivity: str = "balanced",
         endpointing_ms: int = 400,
+        custom_keyterms: Optional[list] = None,
     ) -> None:
         self.client = client
         self.on_transcript = on_transcript
@@ -31,12 +32,50 @@ class DeepgramService:
         self.max_retries = max_retries
         self.punctuation_sensitivity = punctuation_sensitivity
         self.endpointing_ms = endpointing_ms
+        self.custom_keyterms = custom_keyterms or []
         self.ws = None
         self._closing = threading.Event()
 
     # ------------------------------------------------------------------
     # Connection management
     # ------------------------------------------------------------------
+    def _validate_keyterms(self, keyterms) -> Optional[list]:
+        """Validate keyterms list according to Deepgram constraints.
+        
+        Returns validated list of keyterms or None if invalid.
+        """
+        if not keyterms:
+            return None
+        
+        if not isinstance(keyterms, list):
+            logging.warning("Invalid keyterms type, expected list")
+            return None
+        
+        # Deepgram limits - conservative estimates
+        MAX_KEYTERMS = 100
+        MAX_TERM_LENGTH = 100
+        
+        validated = []
+        for term in keyterms[:MAX_KEYTERMS]:
+            if not isinstance(term, str):
+                logging.warning(f"Skipping non-string keyterm: {type(term)}")
+                continue
+            
+            term = term.strip()
+            if not term:
+                continue
+                
+            if len(term) > MAX_TERM_LENGTH:
+                logging.warning(f"Truncating keyterm longer than {MAX_TERM_LENGTH} chars: {term[:20]}...")
+                term = term[:MAX_TERM_LENGTH]
+            
+            validated.append(term)
+        
+        if len(keyterms) > MAX_KEYTERMS:
+            logging.warning(f"Too many keyterms ({len(keyterms)}), using first {MAX_KEYTERMS}")
+        
+        return validated if validated else None
+    
     def _get_live_options(self) -> LiveOptions:
         """Generate Deepgram LiveOptions based on user preferences."""
         
@@ -53,18 +92,28 @@ class DeepgramService:
             punctuation_config["balanced"]
         )
         
-        return LiveOptions(
-            model="nova-3",
-            language="en-US",
-            endpointing=self.endpointing_ms,  # Key fix: increase from 10ms default
-            utterance_end_ms=1000,           # Detect longer pauses
-            vad_events=True,                 # Enable VAD
-            interim_results=True,            # Required for utterance detection
-            **config,                        # Apply punctuation settings
-            encoding="linear16",
-            sample_rate=16000,
-            channels=1,
-        )
+        # Get and validate custom keyterms if available
+        keyterms = self._validate_keyterms(getattr(self, 'custom_keyterms', None))
+        
+        options = {
+            "model": "nova-3",                 # Keep nova-3 as recommended
+            "language": "en-US",
+            "endpointing": self.endpointing_ms,  # Key fix: increase from 10ms default
+            "utterance_end_ms": 1000,           # Detect longer pauses
+            "vad_events": True,                 # Enable VAD
+            "interim_results": True,            # Required for utterance detection
+            "paragraphs": True,                 # Better formatting for long transcripts
+            **config,                           # Apply punctuation settings
+            "encoding": "linear16",
+            "sample_rate": 16000,
+            "channels": 1,
+        }
+        
+        # Add keyterm if provided (Nova-3 specific)
+        if keyterms:
+            options["keyterm"] = keyterms
+            
+        return LiveOptions(**options)
 
     def start(self) -> None:
         """Start the WebSocket connection in a background thread."""
@@ -77,11 +126,14 @@ class DeepgramService:
         while attempt < self.max_retries:
             try:
                 ws = self.client.listen.websocket.v("1")
-                ws.on(
-                    LiveTranscriptionEvents.Transcript,
-                    self._handle_transcript,
-                )
+                
+                # Register all event handlers
+                ws.on(LiveTranscriptionEvents.Transcript, self._handle_transcript)
                 ws.on(LiveTranscriptionEvents.Close, self._handle_close)
+                ws.on(LiveTranscriptionEvents.SpeechStarted, self._handle_speech_started)
+                ws.on(LiveTranscriptionEvents.UtteranceEnd, self._handle_utterance_end)
+                ws.on(LiveTranscriptionEvents.Metadata, self._handle_metadata)
+                ws.on(LiveTranscriptionEvents.Error, self._handle_error)
 
                 options = self._get_live_options()
                 logging.debug("Starting WebSocket with options: %s", options)
@@ -142,6 +194,45 @@ class DeepgramService:
         # Unexpected close – reconnect automatically.
         self.start()
 
+    def _handle_speech_started(self, _client, *args, **kwargs) -> None:
+        """Handle speech started events for visual feedback."""
+        logging.debug("Speech started detected")
+        # Could emit a signal here for UI feedback if needed
+        # For now, just log for debugging
+        
+    def _handle_utterance_end(self, _client, *args, **kwargs) -> None:
+        """Handle utterance end events to detect speech boundaries."""
+        logging.debug("Utterance ended")
+        # This helps segment natural speech boundaries
+        # Could be used to trigger UI updates or finalization logic
+        
+    def _handle_metadata(self, _client, metadata, **kwargs) -> None:
+        """Handle metadata events for debugging and monitoring."""
+        try:
+            # Check if metadata exists first
+            if not metadata:
+                return
+            
+            # Use getattr with defaults instead of hasattr
+            request_id = getattr(metadata, 'request_id', None)
+            if request_id:
+                logging.debug(f"Deepgram request ID: {request_id}")
+            
+            model_info = getattr(metadata, 'model_info', None)
+            if model_info:
+                logging.debug(f"Model info: {model_info}")
+        except Exception as exc:
+            logging.debug(f"Metadata parse error: {exc}")
+            
+    def _handle_error(self, _client, error, **kwargs) -> None:
+        """Handle error events with enhanced recovery."""
+        logging.error(f"Deepgram error: {error}")
+        # Enhanced error recovery could include:
+        # - Retry logic with exponential backoff
+        # - Fallback to alternative models
+        # - User notification of issues
+        # Note: Not calling on_reconnect here as it's for reconnection attempts only
+
     # ------------------------------------------------------------------
     # Streaming API
     # ------------------------------------------------------------------
@@ -189,7 +280,13 @@ class DeepgramService:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit context manager - ensure proper cleanup."""
-        if self.ws:
-            self.finalize()
+        try:
+            if self.ws:
+                self.finalize()
+        except Exception as e:
+            logging.error(f"Error during context manager cleanup: {e}")
+        finally:
+            # Ensure cleanup even on error
+            self.ws = None
         return False  # Don't suppress exceptions
 

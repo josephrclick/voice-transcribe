@@ -68,6 +68,7 @@ DEFAULT_PREFERENCES = {
     'enable_profanity': False,
     'enable_capitalization': True,
     'fragment_threshold': 0.85,
+    'custom_keyterms': [],  # Nova-3 keyterm prompting
 }
 
 def get_config(section, key, default=None):

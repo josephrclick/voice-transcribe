@@ -146,6 +146,7 @@ class VoiceTranscribeApp:
                 max_retries=self.max_retries,
                 punctuation_sensitivity=self.deepgram_config["punctuation_sensitivity"],
                 endpointing_ms=self.deepgram_config["endpointing_ms"],
+                custom_keyterms=self.deepgram_config.get("custom_keyterms", []),
             )
 
         # Create window
@@ -1291,8 +1292,13 @@ class VoiceTranscribeApp:
                 # Load Deepgram configuration with migration support
                 self.deepgram_config = prefs.get("deepgram_config", {
                     "punctuation_sensitivity": "balanced",
-                    "endpointing_ms": 400
+                    "endpointing_ms": 400,
+                    "custom_keyterms": []
                 })
+                # Validate custom_keyterms is a list
+                if not isinstance(self.deepgram_config.get("custom_keyterms"), list):
+                    logging.warning("Invalid custom_keyterms in config, using empty list")
+                    self.deepgram_config["custom_keyterms"] = []
                 # Load punctuation processing configuration
                 self.punctuation_config = prefs.get("punctuation_processing", {
                     "enabled": True,
@@ -1319,7 +1325,8 @@ class VoiceTranscribeApp:
             self.history_limit = 500
             self.deepgram_config = {
                 "punctuation_sensitivity": "balanced",
-                "endpointing_ms": 400
+                "endpointing_ms": 400,
+                "custom_keyterms": []
             }
             self.punctuation_config = {
                 "enabled": True,
