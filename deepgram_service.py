@@ -4,7 +4,7 @@ import logging
 import threading
 from app_config import DEEPGRAM_CONFIG, get_config
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
@@ -39,6 +39,43 @@ class DeepgramService:
     # ------------------------------------------------------------------
     # Connection management
     # ------------------------------------------------------------------
+    def _validate_keyterms(self, keyterms) -> Optional[list]:
+        """Validate keyterms list according to Deepgram constraints.
+        
+        Returns validated list of keyterms or None if invalid.
+        """
+        if not keyterms:
+            return None
+        
+        if not isinstance(keyterms, list):
+            logging.warning("Invalid keyterms type, expected list")
+            return None
+        
+        # Deepgram limits - conservative estimates
+        MAX_KEYTERMS = 100
+        MAX_TERM_LENGTH = 100
+        
+        validated = []
+        for term in keyterms[:MAX_KEYTERMS]:
+            if not isinstance(term, str):
+                logging.warning(f"Skipping non-string keyterm: {type(term)}")
+                continue
+            
+            term = term.strip()
+            if not term:
+                continue
+                
+            if len(term) > MAX_TERM_LENGTH:
+                logging.warning(f"Truncating keyterm longer than {MAX_TERM_LENGTH} chars: {term[:20]}...")
+                term = term[:MAX_TERM_LENGTH]
+            
+            validated.append(term)
+        
+        if len(keyterms) > MAX_KEYTERMS:
+            logging.warning(f"Too many keyterms ({len(keyterms)}), using first {MAX_KEYTERMS}")
+        
+        return validated if validated else None
+    
     def _get_live_options(self) -> LiveOptions:
         """Generate Deepgram LiveOptions based on user preferences."""
         
@@ -55,8 +92,8 @@ class DeepgramService:
             punctuation_config["balanced"]
         )
         
-        # Get custom keyterms if available
-        keyterms = getattr(self, 'custom_keyterms', None)
+        # Get and validate custom keyterms if available
+        keyterms = self._validate_keyterms(getattr(self, 'custom_keyterms', None))
         
         options = {
             "model": "nova-3",                 # Keep nova-3 as recommended
@@ -172,10 +209,18 @@ class DeepgramService:
     def _handle_metadata(self, _client, metadata, **kwargs) -> None:
         """Handle metadata events for debugging and monitoring."""
         try:
-            if hasattr(metadata, 'request_id'):
-                logging.debug(f"Deepgram request ID: {metadata.request_id}")
-            if hasattr(metadata, 'model_info'):
-                logging.debug(f"Model info: {metadata.model_info}")
+            # Check if metadata exists first
+            if not metadata:
+                return
+            
+            # Use getattr with defaults instead of hasattr
+            request_id = getattr(metadata, 'request_id', None)
+            if request_id:
+                logging.debug(f"Deepgram request ID: {request_id}")
+            
+            model_info = getattr(metadata, 'model_info', None)
+            if model_info:
+                logging.debug(f"Model info: {model_info}")
         except Exception as exc:
             logging.debug(f"Metadata parse error: {exc}")
             
@@ -186,8 +231,7 @@ class DeepgramService:
         # - Retry logic with exponential backoff
         # - Fallback to alternative models
         # - User notification of issues
-        if self.on_reconnect:
-            self.on_reconnect(0)  # Signal error to UI
+        # Note: Not calling on_reconnect here as it's for reconnection attempts only
 
     # ------------------------------------------------------------------
     # Streaming API
@@ -236,7 +280,13 @@ class DeepgramService:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit context manager - ensure proper cleanup."""
-        if self.ws:
-            self.finalize()
+        try:
+            if self.ws:
+                self.finalize()
+        except Exception as e:
+            logging.error(f"Error during context manager cleanup: {e}")
+        finally:
+            # Ensure cleanup even on error
+            self.ws = None
         return False  # Don't suppress exceptions
 

@@ -1295,6 +1295,10 @@ class VoiceTranscribeApp:
                     "endpointing_ms": 400,
                     "custom_keyterms": []
                 })
+                # Validate custom_keyterms is a list
+                if not isinstance(self.deepgram_config.get("custom_keyterms"), list):
+                    logging.warning("Invalid custom_keyterms in config, using empty list")
+                    self.deepgram_config["custom_keyterms"] = []
                 # Load punctuation processing configuration
                 self.punctuation_config = prefs.get("punctuation_processing", {
                     "enabled": True,
