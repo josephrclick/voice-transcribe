@@ -8,9 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 deepgram_stub = types.SimpleNamespace(
     DeepgramClient=MagicMock,
     LiveOptions=MagicMock,
-    LiveTranscriptionEvents=types.SimpleNamespace(
-        Transcript="transcript", Close="close"
-    ),
+    LiveTranscriptionEvents=types.SimpleNamespace(Transcript="transcript", Close="close"),
 )
 sys.modules.setdefault("deepgram", deepgram_stub)
 
@@ -89,18 +87,18 @@ def test_finalize_does_not_reconnect():
 def test_punctuation_levels():
     """Test all punctuation sensitivity levels"""
     client = MagicMock()
-    
+
     test_cases = [
         ("off", {"punctuate": False, "smart_format": False}),
         ("minimal", {"punctuate": True, "smart_format": False}),
         ("balanced", {"punctuate": True, "smart_format": True}),
-        ("aggressive", {"punctuate": True, "smart_format": True, "diarize": True})
+        ("aggressive", {"punctuate": True, "smart_format": True, "diarize": True}),
     ]
-    
+
     for level, expected_config in test_cases:
         service = DeepgramService(client, dummy_callback, punctuation_sensitivity=level)
         options = service._get_live_options()
-        
+
         assert options.punctuate == expected_config["punctuate"]
         assert options.smart_format == expected_config["smart_format"]
         if "diarize" in expected_config:
@@ -110,12 +108,12 @@ def test_punctuation_levels():
 def test_endpointing_configuration():
     """Test endpointing parameter handling"""
     client = MagicMock()
-    
+
     # Test default value
     service = DeepgramService(client, dummy_callback)
     options = service._get_live_options()
     assert options.endpointing == 400  # Default 400ms
-    
+
     # Test custom values
     for endpointing_ms in [200, 500, 800, 1000]:
         service = DeepgramService(client, dummy_callback, endpointing_ms=endpointing_ms)
@@ -128,7 +126,7 @@ def test_vad_events_enabled():
     client = MagicMock()
     service = DeepgramService(client, dummy_callback)
     options = service._get_live_options()
-    
+
     assert options.vad_events == True
     assert options.interim_results == True
     assert options.utterance_end_ms == 1000
@@ -139,7 +137,7 @@ def test_invalid_punctuation_level_fallback():
     client = MagicMock()
     service = DeepgramService(client, dummy_callback, punctuation_sensitivity="invalid")
     options = service._get_live_options()
-    
+
     # Should fallback to "balanced" defaults
     assert options.punctuate == True
     assert options.smart_format == True
@@ -148,11 +146,11 @@ def test_invalid_punctuation_level_fallback():
 def test_backward_compatibility():
     """Test that existing code without new parameters works"""
     client = MagicMock()
-    
+
     # This should work exactly like before
     service = DeepgramService(client, dummy_callback)
     options = service._get_live_options()
-    
+
     # Should have balanced defaults
     assert options.punctuate == True
     assert options.smart_format == True
@@ -166,33 +164,33 @@ def test_get_live_options_structure():
     client = MagicMock()
     service = DeepgramService(client, dummy_callback)
     options = service._get_live_options()
-    
+
     # Test all required parameters are set
     assert options.model == "nova-3"
     assert options.language == "en-US"
     assert options.encoding == "linear16"
     assert options.sample_rate == 16000
     assert options.channels == 1
-    
+
     # Test new parameters
-    assert hasattr(options, 'endpointing')
-    assert hasattr(options, 'utterance_end_ms')
-    assert hasattr(options, 'vad_events')
-    assert hasattr(options, 'interim_results')
+    assert hasattr(options, "endpointing")
+    assert hasattr(options, "utterance_end_ms")
+    assert hasattr(options, "vad_events")
+    assert hasattr(options, "interim_results")
 
 
 def test_thread_safety_closing_flag():
     """Test that _closing flag is thread-safe using threading.Event"""
     client = MagicMock()
     service = DeepgramService(client, dummy_callback)
-    
+
     # Test initial state
     assert not service._closing.is_set()
-    
+
     # Test setting and clearing
     service._closing.set()
     assert service._closing.is_set()
-    
+
     service._closing.clear()
     assert not service._closing.is_set()
 
@@ -202,13 +200,13 @@ def test_context_manager_basic():
     client = MagicMock()
     ws = MagicMock()
     client.listen.websocket.v.return_value = ws
-    
+
     # Mock the start method to avoid threading complexities in tests
     with DeepgramService(client, dummy_callback) as service:
         # Service should be returned
         assert service is not None
         assert isinstance(service, DeepgramService)
-    
+
     # After context exit, finalize should be called if ws exists
     # Note: In real usage, the WebSocket would be set during start()
 
@@ -218,14 +216,14 @@ def test_context_manager_cleanup_on_exception():
     client = MagicMock()
     ws = MagicMock()
     client.listen.websocket.v.return_value = ws
-    
+
     try:
         with DeepgramService(client, dummy_callback) as service:
             service.ws = ws  # Simulate connected state
             raise ValueError("Test exception")
     except ValueError:
         pass  # Expected
-    
+
     # Even with exception, finalize should be called
     ws.finish.assert_called_once()
 
@@ -233,11 +231,11 @@ def test_context_manager_cleanup_on_exception():
 def test_context_manager_no_finalize_if_not_connected():
     """Test context manager doesn't call finalize if not connected"""
     client = MagicMock()
-    
+
     with DeepgramService(client, dummy_callback) as service:
         # Don't set ws - simulate no connection
         pass
-    
+
     # Since ws is None, no finalize should be attempted
     # This just ensures no exceptions are raised
 
@@ -248,13 +246,13 @@ def test_finalize_thread_safety():
     ws = MagicMock()
     service = DeepgramService(client, dummy_callback)
     service.ws = ws
-    
+
     # Initial state
     assert not service._closing.is_set()
-    
+
     # Call finalize
     result = service.finalize()
-    
+
     # Should set the closing event and call finish
     assert result is True
     ws.finish.assert_called_once()
@@ -268,12 +266,11 @@ def test_finalize_exception_handling():
     ws.finish.side_effect = Exception("Connection error")
     service = DeepgramService(client, dummy_callback)
     service.ws = ws
-    
+
     # Call finalize - should handle exception
     result = service.finalize()
-    
+
     # Should return False and clear the closing flag
     assert result is False
     assert not service._closing.is_set()
     assert service.ws is None
-

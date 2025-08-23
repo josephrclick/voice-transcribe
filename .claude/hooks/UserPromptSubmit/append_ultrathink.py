@@ -1,5 +1,6 @@
-import sys
 import json
+import sys
+
 
 def main() -> None:
     try:
@@ -17,6 +18,7 @@ def main() -> None:
     except Exception as e:  # pragma: no cover – simple hook, log and exit
         print(f"append_ultrathink hook error: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
