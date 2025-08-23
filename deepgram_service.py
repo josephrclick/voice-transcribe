@@ -24,6 +24,7 @@ class DeepgramService:
         max_retries: int = 5,
         punctuation_sensitivity: str = "balanced",
         endpointing_ms: int = 400,
+        custom_keyterms: Optional[list] = None,
     ) -> None:
         self.client = client
         self.on_transcript = on_transcript
@@ -31,6 +32,7 @@ class DeepgramService:
         self.max_retries = max_retries
         self.punctuation_sensitivity = punctuation_sensitivity
         self.endpointing_ms = endpointing_ms
+        self.custom_keyterms = custom_keyterms or []
         self.ws = None
         self._closing = threading.Event()
 
@@ -53,18 +55,28 @@ class DeepgramService:
             punctuation_config["balanced"]
         )
         
-        return LiveOptions(
-            model="nova-3",
-            language="en-US",
-            endpointing=self.endpointing_ms,  # Key fix: increase from 10ms default
-            utterance_end_ms=1000,           # Detect longer pauses
-            vad_events=True,                 # Enable VAD
-            interim_results=True,            # Required for utterance detection
-            **config,                        # Apply punctuation settings
-            encoding="linear16",
-            sample_rate=16000,
-            channels=1,
-        )
+        # Get custom keyterms if available
+        keyterms = getattr(self, 'custom_keyterms', None)
+        
+        options = {
+            "model": "nova-3",                 # Keep nova-3 as recommended
+            "language": "en-US",
+            "endpointing": self.endpointing_ms,  # Key fix: increase from 10ms default
+            "utterance_end_ms": 1000,           # Detect longer pauses
+            "vad_events": True,                 # Enable VAD
+            "interim_results": True,            # Required for utterance detection
+            "paragraphs": True,                 # Better formatting for long transcripts
+            **config,                           # Apply punctuation settings
+            "encoding": "linear16",
+            "sample_rate": 16000,
+            "channels": 1,
+        }
+        
+        # Add keyterm if provided (Nova-3 specific)
+        if keyterms:
+            options["keyterm"] = keyterms
+            
+        return LiveOptions(**options)
 
     def start(self) -> None:
         """Start the WebSocket connection in a background thread."""
@@ -77,11 +89,14 @@ class DeepgramService:
         while attempt < self.max_retries:
             try:
                 ws = self.client.listen.websocket.v("1")
-                ws.on(
-                    LiveTranscriptionEvents.Transcript,
-                    self._handle_transcript,
-                )
+                
+                # Register all event handlers
+                ws.on(LiveTranscriptionEvents.Transcript, self._handle_transcript)
                 ws.on(LiveTranscriptionEvents.Close, self._handle_close)
+                ws.on(LiveTranscriptionEvents.SpeechStarted, self._handle_speech_started)
+                ws.on(LiveTranscriptionEvents.UtteranceEnd, self._handle_utterance_end)
+                ws.on(LiveTranscriptionEvents.Metadata, self._handle_metadata)
+                ws.on(LiveTranscriptionEvents.Error, self._handle_error)
 
                 options = self._get_live_options()
                 logging.debug("Starting WebSocket with options: %s", options)
@@ -141,6 +156,38 @@ class DeepgramService:
 
         # Unexpected close – reconnect automatically.
         self.start()
+
+    def _handle_speech_started(self, _client, *args, **kwargs) -> None:
+        """Handle speech started events for visual feedback."""
+        logging.debug("Speech started detected")
+        # Could emit a signal here for UI feedback if needed
+        # For now, just log for debugging
+        
+    def _handle_utterance_end(self, _client, *args, **kwargs) -> None:
+        """Handle utterance end events to detect speech boundaries."""
+        logging.debug("Utterance ended")
+        # This helps segment natural speech boundaries
+        # Could be used to trigger UI updates or finalization logic
+        
+    def _handle_metadata(self, _client, metadata, **kwargs) -> None:
+        """Handle metadata events for debugging and monitoring."""
+        try:
+            if hasattr(metadata, 'request_id'):
+                logging.debug(f"Deepgram request ID: {metadata.request_id}")
+            if hasattr(metadata, 'model_info'):
+                logging.debug(f"Model info: {metadata.model_info}")
+        except Exception as exc:
+            logging.debug(f"Metadata parse error: {exc}")
+            
+    def _handle_error(self, _client, error, **kwargs) -> None:
+        """Handle error events with enhanced recovery."""
+        logging.error(f"Deepgram error: {error}")
+        # Enhanced error recovery could include:
+        # - Retry logic with exponential backoff
+        # - Fallback to alternative models
+        # - User notification of issues
+        if self.on_reconnect:
+            self.on_reconnect(0)  # Signal error to UI
 
     # ------------------------------------------------------------------
     # Streaming API
