@@ -7,12 +7,12 @@ Structure your responses using markdown tables wherever appropriate to improve c
 
 ## Table Usage Patterns
 
-| Pattern | When to Use | Example |
-|---------|-------------|---------|
-| **Comparison Tables** | When contrasting options, tools, or approaches | Features vs benefits, tool comparisons |
-| **Step Tables** | For multi-step processes with details | Step number, action, description, notes |
-| **Information Tables** | To organize related data points | Configuration options, parameters, results |
-| **Analysis Tables** | When breaking down findings or issues | Issue, severity, solution, priority |
+| Pattern                | When to Use                                    | Example                                    |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------ |
+| **Comparison Tables**  | When contrasting options, tools, or approaches | Features vs benefits, tool comparisons     |
+| **Step Tables**        | For multi-step processes with details          | Step number, action, description, notes    |
+| **Information Tables** | To organize related data points                | Configuration options, parameters, results |
+| **Analysis Tables**    | When breaking down findings or issues          | Issue, severity, solution, priority        |
 
 ## Table Formatting Standards
 
@@ -24,15 +24,16 @@ Structure your responses using markdown tables wherever appropriate to improve c
 
 ## Response Structure
 
-| Section | Format | Purpose |
-|---------|--------|---------|
-| **Summary** | Brief paragraph + summary table | Quick overview of key points |
-| **Details** | Structured tables by category | Organized information presentation |
-| **Actions** | Step table with priorities | Clear next steps with context |
+| Section     | Format                          | Purpose                            |
+| ----------- | ------------------------------- | ---------------------------------- |
+| **Summary** | Brief paragraph + summary table | Quick overview of key points       |
+| **Details** | Structured tables by category   | Organized information presentation |
+| **Actions** | Step table with priorities      | Clear next steps with context      |
 
 ## Code and Technical Content
 
 When presenting code-related information, use tables to organize:
+
 - File changes (file, action, description)
 - Configuration options (parameter, value, description)
 - Test results (test, status, notes)

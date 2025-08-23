@@ -53,8 +53,7 @@ def check_safety():
                 sys.exit(1)
 
     # Check for force flags without confirmation
-    if any(flag in command for flag in ["-f", "--force", "-y", "--yes"]):
-        if any(cmd in command for cmd in ["rm", "del", "format", "mkfs"]):
+    if any(flag in command for flag in ["-f", "--force", "-y", "--yes"]) and any(cmd in command for cmd in ["rm", "del", "format", "mkfs"]):
             print("⚠️ BLOCKED: Force flag used with destructive command")
             sys.exit(1)
 

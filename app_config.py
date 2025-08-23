@@ -23,7 +23,7 @@ DEEPGRAM_CONFIG = {
 ENHANCEMENT_CONFIG = {
     "DEFAULT_STYLE": "balanced",
     "DEFAULT_MODEL": os.environ.get("ENHANCEMENT_MODEL", "gpt-4o-mini"),
-    "MAX_TOKENS": 500,
+    "MAX_TOKENS": 1500,
     "TEMPERATURE": 0.3,
     "TIMEOUT": 10,  # seconds
 }
@@ -54,8 +54,8 @@ APP_CONFIG = {
 # Timing Configuration
 TIMING_CONFIG = {
     "PASTE_DELAY": 0.5,  # Delay before auto-paste in seconds
-    "STATUS_RESET_DELAY": 2,  # Delay before resetting status messages
-    "CLIPBOARD_STATUS_DURATION": 2,  # How long to show clipboard status
+    "STATUS_RESET_DELAY": 1,  # Delay before resetting status messages
+    "CLIPBOARD_STATUS_DURATION": 1,  # How long to show clipboard status
     "TERMINAL_DETECTION_CACHE_TTL": 2,  # Cache TTL in seconds
 }
 
