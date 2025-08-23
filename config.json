@@ -54,7 +54,8 @@
   },
   "deepgram_config": {
     "punctuation_sensitivity": "minimal",
-    "endpointing_ms": 917
+    "endpointing_ms": 917,
+    "custom_keyterms": []
   },
   "punctuation_processing": {
     "enabled": true,
