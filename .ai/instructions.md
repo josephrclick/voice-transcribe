@@ -159,17 +159,17 @@ Run quality checks before commits and after major changes:
 ```python
 # Full project analysis
 analyze_code(
-    projectId="voice-transcribe-dev",
-    analysisTypes=["quality", "deadcode"],
-    scope="project"
+projectId="voice-transcribe-dev",
+analysisTypes=["quality", "deadcode"],
+scope="project"
 )
 
 # Check specific file
 analyze_code(
-    projectId="voice-transcribe-dev",
-    analysisTypes=["quality"],
-    scope="file",
-    target="enhance.py"
+projectId="voice-transcribe-dev",
+analysisTypes=["quality"],
+scope="file",
+target="enhance.py"
 )
 ```
 
@@ -225,10 +225,10 @@ source venv/bin/activate && python main.py
 ### Configuration
 
 - **API Keys**: Add to `.env` (never commit)
-  ```
-  DEEPGRAM_API_KEY=your_key_here
-  OPENAI_API_KEY=sk-your_key_here  # Optional for Prompt Mode + Dashboard
-  ```
+```
+DEEPGRAM_API_KEY=your_key_here
+OPENAI_API_KEY=sk-your_key_here  # Optional for Prompt Mode + Dashboard
+```
 - **Preferences**: Auto-saved to `config.json` (don't edit manually)
 
 ## Security Guidelines
