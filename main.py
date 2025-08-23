@@ -28,6 +28,7 @@ from app_config import (
     get_config
 )
 from paste_strategies import PasteStrategyManager
+from subprocess_utils import SubprocessManager
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk, Pango
 from deepgram import (
@@ -40,19 +41,57 @@ from punctuation_controls import PunctuationControlsWidget
 from dotenv import load_dotenv
 from typing import List, Dict, Optional
 
-# Import our enhancement module
-try:
-    from enhance import (
-        enhance_prompt, 
-        get_enhancement_styles, 
-        get_models_by_tier, 
-        get_usage_statistics, 
-        estimate_enhancement_cost
-    )
-    ENHANCEMENT_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: enhance.py not found or incomplete. Prompt Mode will be disabled. Error: {e}")
-    ENHANCEMENT_AVAILABLE = False
+# Lazy loading for enhancement module - only import when needed
+ENHANCEMENT_AVAILABLE = None
+_enhancement_module = None
+
+def _load_enhancement_module():
+    """Lazy load the enhancement module on first use."""
+    global ENHANCEMENT_AVAILABLE, _enhancement_module
+    
+    if ENHANCEMENT_AVAILABLE is not None:
+        return ENHANCEMENT_AVAILABLE
+    
+    try:
+        import enhance
+        _enhancement_module = enhance
+        ENHANCEMENT_AVAILABLE = True
+        logger.info("Enhancement module loaded successfully")
+    except ImportError as e:
+        logger.warning(f"enhance.py not found or incomplete. Prompt Mode will be disabled. Error: {e}")
+        ENHANCEMENT_AVAILABLE = False
+    
+    return ENHANCEMENT_AVAILABLE
+
+def enhance_prompt(*args, **kwargs):
+    """Lazy wrapper for enhance_prompt."""
+    if _load_enhancement_module():
+        return _enhancement_module.enhance_prompt(*args, **kwargs)
+    raise ImportError("Enhancement module not available")
+
+def get_enhancement_styles(*args, **kwargs):
+    """Lazy wrapper for get_enhancement_styles."""
+    if _load_enhancement_module():
+        return _enhancement_module.get_enhancement_styles(*args, **kwargs)
+    return []  # Return empty list if module not available
+
+def get_models_by_tier(*args, **kwargs):
+    """Lazy wrapper for get_models_by_tier."""
+    if _load_enhancement_module():
+        return _enhancement_module.get_models_by_tier(*args, **kwargs)
+    return {}  # Return empty dict if module not available
+
+def get_usage_statistics(*args, **kwargs):
+    """Lazy wrapper for get_usage_statistics."""
+    if _load_enhancement_module():
+        return _enhancement_module.get_usage_statistics(*args, **kwargs)
+    return {}  # Return empty dict if module not available
+
+def estimate_enhancement_cost(*args, **kwargs):
+    """Lazy wrapper for estimate_enhancement_cost."""
+    if _load_enhancement_module():
+        return _enhancement_module.estimate_enhancement_cost(*args, **kwargs)
+    return 0.0  # Return zero cost if module not available
 
 # Import model configuration
 try:
@@ -98,6 +137,9 @@ class VoiceTranscribeApp:
         # Terminal detection cache
         self._terminal_cache = None
         self._terminal_cache_time = 0
+        
+        # Subprocess manager for optimized command execution
+        self.subprocess_manager = SubprocessManager(default_cache_ttl=2.0)
         
         # Prompt Mode settings
         self.prompt_mode_enabled = False
@@ -352,13 +394,13 @@ class VoiceTranscribeApp:
                             self.show_history_accelerator)
 
         # Ctrl+Shift+Q for Prompt Mode toggle
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             key, modifier = Gtk.accelerator_parse("<Control><Shift>q")
             accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
                               self.toggle_prompt_mode_accelerator)
         
         # Ctrl+D for Performance Dashboard
-        if ENHANCEMENT_AVAILABLE and MODEL_CONFIG_AVAILABLE:
+        if _load_enhancement_module() and MODEL_CONFIG_AVAILABLE:
             key, modifier = Gtk.accelerator_parse("<Control>d")
             accel_group.connect(key, modifier, Gtk.AccelFlags.VISIBLE,
                               self.show_performance_dashboard_accelerator)
@@ -418,7 +460,7 @@ class VoiceTranscribeApp:
         right_controls.pack_start(self.punctuation_controls, False, False, 0)
         
         # Prompt Mode controls
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             prompt_controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
             prompt_controls.get_style_context().add_class("prompt-controls")
             
@@ -491,7 +533,7 @@ class VoiceTranscribeApp:
         record_hint.get_style_context().add_class("stats-label")
         shortcuts_box.pack_start(record_hint, False, False, 0)
         
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             separator = Gtk.Label(label="|")
             separator.get_style_context().add_class("stats-label")
             shortcuts_box.pack_start(separator, False, False, 0)
@@ -597,7 +639,7 @@ class VoiceTranscribeApp:
         panels_box.pack_start(original_panel, True, True, 0)
         
         # Enhanced prompt panel (only if enhancement available)
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             enhanced_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
             
             # Enhanced header with copy button
@@ -766,7 +808,7 @@ class VoiceTranscribeApp:
         vbox.pack_start(session_frame, False, False, 0)
         
         # Model Usage Statistics
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             try:
                 usage_stats = get_usage_statistics()
                 
@@ -1783,7 +1825,7 @@ class VoiceTranscribeApp:
         self.clear_button.set_sensitive(True)
         
         # Handle enhancement if Prompt Mode is enabled
-        if ENHANCEMENT_AVAILABLE and self.prompt_mode_enabled:
+        if _load_enhancement_module() and self.prompt_mode_enabled:
             # Show enhancing status
             GLib.idle_add(self.enhancement_label.set_text, "✨ Enhancing prompt...")
             
@@ -1837,7 +1879,7 @@ class VoiceTranscribeApp:
         self.enhancement_label.set_text("")
         
         # Estimate and add cost for this enhancement (thread-safe)
-        if MODEL_CONFIG_AVAILABLE and ENHANCEMENT_AVAILABLE:
+        if MODEL_CONFIG_AVAILABLE and _load_enhancement_module():
             try:
                 current_model = self.config.get("selected_model", "gpt-4o-mini")
                 estimated_cost = estimate_enhancement_cost(self.transcript_text, current_model)
@@ -1906,7 +1948,7 @@ class VoiceTranscribeApp:
         buffer = self.original_text_view.get_buffer()
         buffer.set_text("Your transcript will appear here...")
         
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             buffer = self.enhanced_text_view.get_buffer()
             buffer.set_text("Enhanced prompt will appear here when Prompt Mode is enabled...")
         
@@ -1922,7 +1964,7 @@ class VoiceTranscribeApp:
         # Disable action buttons
         self.copy_original_button.set_sensitive(False)
         self.clear_button.set_sensitive(False)
-        if ENHANCEMENT_AVAILABLE:
+        if _load_enhancement_module():
             self.copy_enhanced_button.set_sensitive(False)
         
         # Clear status labels
@@ -1959,20 +2001,26 @@ class VoiceTranscribeApp:
         
         if session_type == 'x11':
             try:
-                # Get window ID
-                result = subprocess.run(['xdotool', 'getactivewindow'],
-                                      capture_output=True, text=True, check=True)
+                # Get window ID (cached for 2 seconds)
+                result = self.subprocess_manager.run_cached(
+                    ['xdotool', 'getactivewindow'],
+                    cache_ttl=0.5  # Shorter TTL for window ID as it changes often
+                )
                 window_id = result.stdout.strip()
                 
                 # Get window class using xprop (more reliable than xdotool)
-                result = subprocess.run(['xprop', '-id', window_id, 'WM_CLASS'],
-                                      capture_output=True, text=True, check=True)
+                result = self.subprocess_manager.run_cached(
+                    ['xprop', '-id', window_id, 'WM_CLASS'],
+                    cache_ttl=2.0  # Window class changes less frequently
+                )
                 wm_class_output = result.stdout.strip().lower()
                 logger.debug(f"WM_CLASS output: {wm_class_output}")
                 
                 # Also get window title for additional context
-                result = subprocess.run(['xdotool', 'getactivewindow', 'getwindowname'],
-                                      capture_output=True, text=True, check=True)
+                result = self.subprocess_manager.run_cached(
+                    ['xdotool', 'getactivewindow', 'getwindowname'],
+                    cache_ttl=0.5  # Title can change frequently
+                )
                 window_title = result.stdout.strip().lower()
                 logger.debug(f"Window title: {window_title}")
                 
@@ -2012,35 +2060,43 @@ class VoiceTranscribeApp:
             
             # Method 1: Try swaymsg for Sway compositor
             try:
-                result = subprocess.run(['swaymsg', '-t', 'get_tree'],
-                                      capture_output=True, text=True, check=True)
-                output = result.stdout.lower()
-                
-                # Look for focused window
-                if '"focused":true' in output:
-                    for terminal in terminal_classes:
-                        if terminal in output:
-                            logger.debug(f"Detected terminal on Wayland/Sway (pattern: {terminal})")
-                            # Update cache
-                            self._terminal_cache = True
-                            self._terminal_cache_time = current_time
-                            return True
+                result = self.subprocess_manager.run_cached(
+                    ['swaymsg', '-t', 'get_tree'],
+                    cache_ttl=1.0,  # Cached briefly as window tree changes
+                    check=False  # Don't throw on non-zero return
+                )
+                if result.returncode == 0:
+                    output = result.stdout.lower()
+                    
+                    # Look for focused window
+                    if '"focused":true' in output:
+                        for terminal in terminal_classes:
+                            if terminal in output:
+                                logger.debug(f"Detected terminal on Wayland/Sway (pattern: {terminal})")
+                                # Update cache
+                                self._terminal_cache = True
+                                self._terminal_cache_time = current_time
+                                return True
             except Exception:
                 pass
             
             # Method 2: Try hyprctl for Hyprland compositor
             try:
-                result = subprocess.run(['hyprctl', 'activewindow'],
-                                      capture_output=True, text=True, check=True)
-                output = result.stdout.lower()
-                
-                for terminal in terminal_classes:
-                    if terminal in output:
-                        logger.debug(f"Detected terminal on Wayland/Hyprland (pattern: {terminal})")
-                        # Update cache
-                        self._terminal_cache = True
-                        self._terminal_cache_time = current_time
-                        return True
+                result = self.subprocess_manager.run_cached(
+                    ['hyprctl', 'activewindow'],
+                    cache_ttl=1.0,  # Cached briefly
+                    check=False  # Don't throw on non-zero return
+                )
+                if result.returncode == 0:
+                    output = result.stdout.lower()
+                    
+                    for terminal in terminal_classes:
+                        if terminal in output:
+                            logger.debug(f"Detected terminal on Wayland/Hyprland (pattern: {terminal})")
+                            # Update cache
+                            self._terminal_cache = True
+                            self._terminal_cache_time = current_time
+                            return True
             except Exception:
                 pass
                 
@@ -2075,6 +2131,15 @@ class VoiceTranscribeApp:
     def on_destroy(self, widget):
         """Save preferences before closing"""
         self.save_preferences()
+        
+        # Log subprocess performance stats
+        stats = self.subprocess_manager.get_stats()
+        if stats['total_calls'] > 0:
+            logger.info(f"Subprocess performance: {stats['cache_hits']} hits, "
+                       f"{stats['cache_misses']} misses, "
+                       f"{stats['hit_rate']:.1%} hit rate, "
+                       f"{stats['subprocess_calls']} actual subprocess calls")
+        
         self.stop_audio.set()
         if self.input_stream:
             self.input_stream.close()
