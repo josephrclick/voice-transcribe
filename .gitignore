@@ -55,9 +55,6 @@ tmp/
 temp/
 *.tmp
 
-# Ultra MCP vector index
-.ultra-mcp/
-drizzle.config.json
-
+.codex/
 .gemini/
 gha-creds-*.json
