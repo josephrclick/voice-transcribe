@@ -58,3 +58,6 @@ temp/
 # Ultra MCP vector index
 .ultra-mcp/
 drizzle.config.json
+
+.gemini/
+gha-creds-*.json
